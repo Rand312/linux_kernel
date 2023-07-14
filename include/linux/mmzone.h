@@ -363,7 +363,9 @@ struct zone {
 	/* Read-mostly fields */
 
 	/* zone watermarks, access with *_wmark_pages(zone) macros */
+	// 物理内存区域中的水位线
 	unsigned long _watermark[NR_WMARK];
+	//优化内存碎片对内存分配的影响，可以动态改变内存区域的基准水位线
 	unsigned long watermark_boost;
 
 	unsigned long nr_reserved_highatomic;
@@ -431,8 +433,11 @@ struct zone {
 	 * mem_hotplug_begin/end(). Any reader who can't tolerant drift of
 	 * present_pages should get_online_mems() to get a stable value.
 	 */
+	//被伙伴系统管理的物理页个数
 	atomic_long_t		managed_pages;
+	//该node所有物理页个数
 	unsigned long		spanned_pages;
+	//所有可用的物理页个数(不包括内存空洞)
 	unsigned long		present_pages;
 
 	const char		*name;
@@ -457,6 +462,7 @@ struct zone {
 	ZONE_PADDING(_pad1_)
 
 	/* free areas of different sizes */
+	//与伙伴系统相关的核心数据结构
 	struct free_area	free_area[MAX_ORDER];
 
 	/* zone flags, see below */
@@ -630,12 +636,13 @@ extern struct page *mem_map;
  * per-zone basis.
  */
 struct bootmem_data;
+//用来描述一个 NUMA 节点
 typedef struct pglist_data {
 	struct zone node_zones[MAX_NR_ZONES];
 	struct zonelist node_zonelists[MAX_ZONELISTS];
 	int nr_zones;
 #ifdef CONFIG_FLAT_NODE_MEM_MAP	/* means !SPARSEMEM */
-	struct page *node_mem_map;
+	struct page *node_mem_map;  //指向 NUMA 节点内第一个物理页的 pfn
 #ifdef CONFIG_PAGE_EXTENSION
 	struct page_ext *node_page_ext;
 #endif
@@ -654,7 +661,9 @@ typedef struct pglist_data {
 	spinlock_t node_size_lock;
 #endif
 	unsigned long node_start_pfn;
+	//NUMA节点内所有可用的物理页个数，不包括内存空洞
 	unsigned long node_present_pages; /* total number of physical pages */
+	//NUMA节点内所有物理页面数量，包括内存空洞
 	unsigned long node_spanned_pages; /* total size of physical page
 					     range, including holes */
 	int node_id;

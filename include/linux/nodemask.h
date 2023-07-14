@@ -95,6 +95,7 @@
 #include <linux/bitmap.h>
 #include <linux/numa.h>
 
+//申明一个位图类型，位图长度为 MAX_NUMNODES
 typedef struct { DECLARE_BITMAP(bits, MAX_NUMNODES); } nodemask_t;
 extern nodemask_t _unused_nodemask_arg_;
 
@@ -407,7 +408,7 @@ enum node_states {
  * The following particular system nodemasks and operations
  * on them manage all possible and online nodes.
  */
-
+//记录每个节点的状态
 extern nodemask_t node_states[NR_NODE_STATES];
 
 #if MAX_NUMNODES > 1

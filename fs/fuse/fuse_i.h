@@ -120,7 +120,7 @@ struct fuse_inode {
 
 			/* size of cache */
 			loff_t size;
-
+writepages
 			/* position at end of cache (position of next entry) */
 			loff_t pos;
 

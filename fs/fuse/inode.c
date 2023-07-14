@@ -1256,7 +1256,7 @@ static void fuse_kill_sb_anon(struct super_block *sb)
 	fuse_sb_destroy(sb);
 	kill_anon_super(sb);
 }
-
+//FS_USERNS_MOUNT 标志的文件系统允许在用户命名空间中进行挂载和卸载操作，从而为容器和沙盒等虚拟化环境提供更好的隔离。
 static struct file_system_type fuse_fs_type = {
 	.owner		= THIS_MODULE,
 	.name		= "fuse",
