@@ -115,10 +115,15 @@ extern pmd_t *mm_find_pmd(struct mm_struct *mm, unsigned long address);
  * by a const pointer.
  */
 struct alloc_context {
+	// 运行进程 CPU 所在 NUMA  节点以及其所有备用 NUMA 节点中允许内存分配的内存区域
 	struct zonelist *zonelist;
+	// NUMA  节点状态掩码
 	nodemask_t *nodemask;
+	// 内存分配优先级最高的内存区域 zone
 	struct zoneref *preferred_zoneref;
+	// 物理内存页的迁移类型分为：不可迁移，可回收，可迁移类型，防止内存碎片
 	int migratetype;
+	// 内存分配最高优先级的内存区域 zone
 	enum zone_type high_zoneidx;
 	//一个布尔值，表示是否在多个内存区域间分散脏页。脏页是已经被修改但尚未写回磁盘的内存页。
 	//将脏页分散到多个内存区域有助于提高内存回收效率

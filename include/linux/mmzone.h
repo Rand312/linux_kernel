@@ -39,9 +39,9 @@
 enum migratetype {
 	MIGRATE_UNMOVABLE,
 	MIGRATE_MOVABLE,
-	MIGRATE_RECLAIMABLE,
+	MIGRATE_RECLAIMABLE,  //可回收
 	MIGRATE_PCPTYPES,	/* the number of types on the pcp lists */
-	MIGRATE_HIGHATOMIC = MIGRATE_PCPTYPES,
+	MIGRATE_HIGHATOMIC = MIGRATE_PCPTYPES,  //紧急内存
 #ifdef CONFIG_CMA
 	/*
 	 * MIGRATE_CMA migration type is designed to mimic the way
@@ -56,7 +56,7 @@ enum migratetype {
 	 * MAX_ORDER_NR_PAGES should biggest page be bigger then
 	 * a single pageblock.
 	 */
-	MIGRATE_CMA,
+	MIGRATE_CMA,   // 预留的连续内存 CMA
 #endif
 #ifdef CONFIG_MEMORY_ISOLATION
 	MIGRATE_ISOLATE,	/* can't allocate from here */
@@ -273,10 +273,14 @@ enum zone_watermarks {
 #define low_wmark_pages(z) (z->_watermark[WMARK_LOW] + z->watermark_boost)
 #define high_wmark_pages(z) (z->_watermark[WMARK_HIGH] + z->watermark_boost)
 #define wmark_pages(z, i) (z->_watermark[i] + z->watermark_boost)
-
+//直接使用 struct per_cpu_pages 结构的链表来集中管理系统中所有 CPU 高速缓存冷热页
 struct per_cpu_pages {
+	//物理页数量，如果是热页集合，则表示加载进高速缓存中的物理页面个数
 	int count;		/* number of pages in the list */
+	//如果集合中页面的数量 count 值超过了 high 的值，那么表示 list 中的页面太多了，
+	//内核会从高速缓存中释放 batch 个页面到物理内存区域中的伙伴系统中
 	int high;		/* high watermark, emptying needed */
+	//每次批量向CPU告诉缓存填充或者释放的物理页面的个数
 	int batch;		/* chunk size for buddy add/remove */
 
 	/* Lists of pages, one per migrate type stored on the pcp-lists */
@@ -379,6 +383,7 @@ struct zone {
 	 * recalculated at runtime if the sysctl_lowmem_reserve_ratio sysctl
 	 * changes.
 	 */
+	//每个区域为自己预留的内存，防止被高位内存区域挤压占用
 	long lowmem_reserve[MAX_NR_ZONES];
 
 #ifdef CONFIG_NUMA
@@ -638,8 +643,11 @@ extern struct page *mem_map;
 struct bootmem_data;
 //用来描述一个 NUMA 节点
 typedef struct pglist_data {
+	// NUMA 节点中的物理内存区域
 	struct zone node_zones[MAX_NR_ZONES];
+	// NUMA 节点的备用列表，其中包含了所有 NUMA 节点中的所有物理内存区域 zone，按照访问距离由近到远顺序依次排列
 	struct zonelist node_zonelists[MAX_ZONELISTS];
+	// NUMA 节点中的物理内存区域个数
 	int nr_zones;
 #ifdef CONFIG_FLAT_NODE_MEM_MAP	/* means !SPARSEMEM */
 	struct page *node_mem_map;  //指向 NUMA 节点内第一个物理页的 pfn

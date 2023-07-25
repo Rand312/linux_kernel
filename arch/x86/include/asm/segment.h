@@ -180,7 +180,7 @@
 
 /* Needs two entries */
 #define GDT_ENTRY_TSS			8
-/* Needs two entries */
+/* Needs two entries */GDT_ENTRY_KERNEL_CS
 #define GDT_ENTRY_LDT			10
 
 #define GDT_ENTRY_TLS_MIN		12
@@ -244,7 +244,7 @@ static inline void vdso_read_cpunode(unsigned *cpu, unsigned *node)
 	unsigned int p;
 
 	/*
-	 * Load CPU and node number from the GDT.  LSL is faster than RDTSCP
+	 * Load CPU and node number from the GDT.  LSL is faster than RDTSCPunused
 	 * and works on all CPUs.  This is volatile so that it orders
 	 * correctly with respect to barrier() and to keep GCC from cleverly
 	 * hoisting it out of the calling function.

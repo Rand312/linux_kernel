@@ -68,11 +68,15 @@
  * SPARSEMEM_EXTREME with !SPARSEMEM_VMEMMAP).
  */
 enum pageflags {
+	//表示该物理页面已经被锁定，如果该标志位置位，说明有使用者正在操作该 page , 
+	//则内核的其他部分不允许访问该页， 这可以防止内存管理出现竞态条件，例如：在从硬盘读取数据到 page 时
 	PG_locked,		/* Page is locked. Don't touch. */
+	//表示该物理页面刚刚被访问过
 	PG_referenced,
 	PG_uptodate,
 	PG_dirty,
 	PG_lru,
+	//表示该物理页位于 active list 链表中。PG_referenced 和 PG_active 共同控制了系统使用该内存页的活跃程度，在内存回收的时候这两个信息非常重要
 	PG_active,
 	PG_workingset,
 	PG_waiters,		/* Page has waiters, check its waitqueue. Must be bit #7 and in the same byte as "PG_locked" */
@@ -83,13 +87,16 @@ enum pageflags {
 	PG_reserved,
 	PG_private,		/* If pagecache, has fs-private data */
 	PG_private_2,		/* If pagecache, has fs aux data */
+	//表示该物理内存页正在被内核的 pdflush 线程回写到磁盘中
 	PG_writeback,		/* Page is under writeback */
 	PG_head,		/* A head page */
 	PG_mappedtodisk,	/* Has blocks allocated on-disk */
+	//表示该物理内存页已经被内核选中即将要进行回收
 	PG_reclaim,		/* To be reclaimed asap */
 	PG_swapbacked,		/* Page is backed by RAM/swap */
 	PG_unevictable,		/* Page is "unevictable"  */
 #ifdef CONFIG_MMU
+	//表示该物理内存页被进程通过 mlock 系统调用锁定常驻在内存中，不会被置换出去
 	PG_mlocked,		/* Page is vma mlocked */
 #endif
 #ifdef CONFIG_ARCH_USES_PG_UNCACHED

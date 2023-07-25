@@ -4233,25 +4233,33 @@ static inline struct page *
 __alloc_pages_slowpath(gfp_t gfp_mask, unsigned int order,
 						struct alloc_context *ac)
 {
-	bool can_direct_reclaim = gfp_mask & __GFP_DIRECT_RECLAIM;
-	const bool costly_order = order > PAGE_ALLOC_COSTLY_ORDER;
-	struct page *page = NULL;
-	unsigned int alloc_flags;
-	unsigned long did_some_progress;
-	enum compact_priority compact_priority;
-	enum compact_result compact_result;
-	int compaction_retries;
-	int no_progress_loops;
-	unsigned int cpuset_mems_cookie;
-	int reserve_flags;
+    // 在慢速内存分配路径中可能会导致内核进行直接内存回收
+    // 这里设置 __GFP_DIRECT_RECLAIM 表示允许内核进行直接内存回收
+    bool can_direct_reclaim = gfp_mask & __GFP_DIRECT_RECLAIM;
+    // 本次内存分配是否是针对大量内存页的分配，内核定义 PAGE_ALLOC_COSTLY_ORDER = 3
+    // 也就是说内存请求内存页的数量大于 2 ^ 3 = 8 个内存页时，costly_order = true，后续会影响是否进行 OOM
+    const bool costly_order = order > PAGE_ALLOC_COSTLY_ORDER;
+    // 用于指向成功申请的内存
+    struct page *page = NULL;
+    // 内存分配标识，后续会根据不同标识进入到不同的内存分配逻辑处理分支
+    unsigned int alloc_flags;
+    // 后续用于记录直接内存回收了多少内存页
+    unsigned long did_some_progress;
+    // 关于内存整理相关参数
+    enum compact_priority compact_priority;
+    enum compact_result compact_result;
+    int compaction_retries;
+    // 记录重试的次数，超过一定的次数（16次）则内存分配失败
+    int no_progress_loops;
+    // 临时保存调整后的内存分配策略
+    int reserve_flags;
 
-	/*
-	 * We also sanity check to catch abuse of atomic reserves being used by
-	 * callers that are not in atomic context.
-	 */
-	if (WARN_ON_ONCE((gfp_mask & (__GFP_ATOMIC|__GFP_DIRECT_RECLAIM)) ==
-				(__GFP_ATOMIC|__GFP_DIRECT_RECLAIM)))
-		gfp_mask &= ~__GFP_ATOMIC;
+    // 流程现在来到了慢速内存分配这里，说明快速分配路径已经失败了
+    // 内核需要对 gfp_mask 分配行为掩码做一些修改，修改为一些更可能导致内存分配成功的标识
+    // 因为接下来的直接内存回收非常耗时可能会导致进程阻塞睡眠，不适用原子 __GFP_ATOMIC 内存分配的上下文。
+    if (WARN_ON_ONCE((gfp_mask & (__GFP_ATOMIC|__GFP_DIRECT_RECLAIM)) ==
+                (__GFP_ATOMIC|__GFP_DIRECT_RECLAIM)))
+        gfp_mask &= ~__GFP_ATOMIC;
 
 retry_cpuset:
 	compaction_retries = 0;
@@ -4484,11 +4492,15 @@ static inline bool prepare_alloc_pages(gfp_t gfp_mask, unsigned int order,
 		struct alloc_context *ac, gfp_t *alloc_mask,
 		unsigned int *alloc_flags)
 {
+	// 根据 gfp_mask 掩码中的内存区域修饰符获取内存分配最高优先级的内存区域 zone
 	ac->high_zoneidx = gfp_zone(gfp_mask);
+	// 从 NUMA 节点的备用节点链表中一次性获取允许进行内存分配的所有内存区域
 	ac->zonelist = node_zonelist(preferred_nid, gfp_mask);
 	ac->nodemask = nodemask;
+	// 从 gfp_mask 掩码中获取页面迁移属性，迁移属性分为：不可迁移，可回收，可迁移。
 	ac->migratetype = gfpflags_to_migratetype(gfp_mask);
-
+	// 如果使用 cgroup 将进程绑定限制在了某些 CPU 上，那么内存分配只能在
+    // 这些绑定的 CPU 相关联的 NUMA 节点中进行
 	if (cpusets_enabled()) {
 		*alloc_mask |= __GFP_HARDWALL;
 		if (!ac->nodemask)
@@ -4499,9 +4511,9 @@ static inline bool prepare_alloc_pages(gfp_t gfp_mask, unsigned int order,
 
 	fs_reclaim_acquire(gfp_mask);
 	fs_reclaim_release(gfp_mask);
-
+	// 如果设置了允许直接内存回收，那么内存分配进程则可能会导致休眠被重新调度 
 	might_sleep_if(gfp_mask & __GFP_DIRECT_RECLAIM);
-
+	// 提前判断本次内存分配是否能够成功，如果不能则尽早失败
 	if (should_fail_alloc_page(gfp_mask, order))
 		return false;
 
@@ -4535,22 +4547,26 @@ __alloc_pages_nodemask(gfp_t gfp_mask, unsigned int order, int preferred_nid,
 							nodemask_t *nodemask)
 {
 	struct page *page;
+	//内存区域中的剩余内存需要在 WMARK_LOW 水位线之上才能进行内存分配，否则失败（初次尝试快速内存分配）
 	unsigned int alloc_flags = ALLOC_WMARK_LOW;
 	gfp_t alloc_mask; /* The gfp_t that was actually used for allocation */
+	// 用于在不同内存分配辅助函数中传递参数
 	struct alloc_context ac = { };
 
 	/*
 	 * There are several places where we assume that the order value is sane
 	 * so bail out early if the request is out of bound.
 	 */
+	// 检查用于向伙伴系统申请内存容量的分配阶 order 的合法性
+    // 内核定义最大分配阶 MAX_ORDER -1 = 10，也就是说一次最多只能从伙伴系统中申请 1024 个内存页。
 	if (unlikely(order >= MAX_ORDER)) {
 		WARN_ON_ONCE(!(gfp_mask & __GFP_NOWARN));
 		return NULL;
 	}
-
+	// 表示在内存分配期间进程可以休眠阻塞
 	gfp_mask &= gfp_allowed_mask;
 	alloc_mask = gfp_mask;
-	//计算相关信息并将它们保存到分配上下文里面
+	//计算相关信息并将它们保存到分配上下文里面, 初始化 alloc_context，并为接下来的快速内存分配设置相关 gfp
 	if (!prepare_alloc_pages(gfp_mask, order, preferred_nid, nodemask, &ac, &alloc_mask, &alloc_flags))
 		return NULL;
 	//确定首选的zone
@@ -4560,9 +4576,11 @@ __alloc_pages_nodemask(gfp_t gfp_mask, unsigned int order, int preferred_nid,
 	 * Forbid the first pass from falling back to types that fragment
 	 * memory until all local zones are considered.
 	 */
+	// 避免内存碎片化的相关分配标识设置，可暂时忽略
 	alloc_flags |= alloc_flags_nofragment(ac.preferred_zoneref->zone, gfp_mask);
 
 	/* First allocation attempt */
+	// 内存分配快速路径：第一次尝试从底层伙伴系统分配内存，注意此时是在 WMARK_LOW 水位线之上分配内存
 	//尝试从伙伴系统的空闲链表中分配内存，若分配成功，直接返回内存块的第一个页面的page数据结构
 	//分配不成功，则会进入慢速分配流程
 	page = get_page_from_freelist(alloc_mask, order, alloc_flags, &ac);
@@ -4575,6 +4593,10 @@ __alloc_pages_nodemask(gfp_t gfp_mask, unsigned int order, int preferred_nid,
 	 * from a particular context which has been marked by
 	 * memalloc_no{fs,io}_{save,restore}.
 	 */
+	// 流程走到这里表示内存分配在快速路径下失败
+    // 这里需要恢复最初的内存分配标识设置，后续会尝试更加激进的内存分配策略
+
+	
 	alloc_mask = current_gfp_context(gfp_mask);
 	ac.spread_dirty_pages = false;
 
@@ -4582,9 +4604,13 @@ __alloc_pages_nodemask(gfp_t gfp_mask, unsigned int order, int preferred_nid,
 	 * Restore the original nodemask if it was potentially replaced with
 	 * &cpuset_current_mems_allowed to optimize the fast-path attempt.
 	 */
+	//恢复最初的 node mask 因为它可能在第一次内存分配的过程中被改变
 	if (unlikely(ac.nodemask != nodemask))
 		ac.nodemask = nodemask;
-	//进入慢速分配流程
+
+	// 在第一次快速内存分配失败之后，说明内存已经不足了，内核需要做更多的工作
+    // 比如通过 kswap 回收内存，或者直接内存回收等方式获取更多的空闲内存以满足内存分配的需求
+    // 所以下面的过程称之为慢速分配路径
 	page = __alloc_pages_slowpath(alloc_mask, order, &ac);
 
 out:
@@ -4608,10 +4634,11 @@ EXPORT_SYMBOL(__alloc_pages_nodemask);
 unsigned long __get_free_pages(gfp_t gfp_mask, unsigned int order)
 {
 	struct page *page;
-
+	// 不能在高端内存中分配物理页，因为无法直接映射获取虚拟内存地址
 	page = alloc_pages(gfp_mask & ~__GFP_HIGHMEM, order);
 	if (!page)
 		return 0;
+	// 将直接映射区中的物理内存页转换为虚拟内存地址
 	return (unsigned long) page_address(page);
 }
 EXPORT_SYMBOL(__get_free_pages);
@@ -7595,6 +7622,7 @@ void setup_per_zone_wmarks(void)
  */
 int __meminit init_per_zone_wmark_min(void)
 {
+	//低位内存区域的总和
 	unsigned long lowmem_kbytes;
 	int new_min_free_kbytes;
 

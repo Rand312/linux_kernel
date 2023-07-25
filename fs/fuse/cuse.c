@@ -57,8 +57,8 @@
 struct cuse_conn {
 	struct list_head	list;	/* linked on cuse_conntbl */
 	struct fuse_conn	fc;	/* fuse connection */
-	struct cdev		*cdev;	/* associated character device */
-	struct device		*dev;	/* device representing @cdev */
+	struct cdev* cdev;	/* associated character device */
+	struct device* dev;	/* device representing @cdev */
 
 	/* init parameters, set once during initialization */
 	bool			unrestricted_ioctl;
@@ -66,14 +66,14 @@ struct cuse_conn {
 
 static DEFINE_MUTEX(cuse_lock);		/* protects registration */
 static struct list_head cuse_conntbl[CUSE_CONNTBL_LEN];
-static struct class *cuse_class;
+static struct class* cuse_class;
 
-static struct cuse_conn *fc_to_cc(struct fuse_conn *fc)
+static struct cuse_conn* fc_to_cc(struct fuse_conn* fc)
 {
 	return container_of(fc, struct cuse_conn, fc);
 }
 
-static struct list_head *cuse_conntbl_head(dev_t devt)
+static struct list_head* cuse_conntbl_head(dev_t devt)
 {
 	return &cuse_conntbl[(MAJOR(devt) + MINOR(devt)) % CUSE_CONNTBL_LEN];
 }
@@ -89,7 +89,7 @@ static struct list_head *cuse_conntbl_head(dev_t devt)
  * FUSE file.
  */
 
-static ssize_t cuse_read_iter(struct kiocb *kiocb, struct iov_iter *to)
+static ssize_t cuse_read_iter(struct kiocb* kiocb, struct iov_iter* to)
 {
 	struct fuse_io_priv io = FUSE_IO_PRIV_SYNC(kiocb);
 	loff_t pos = 0;
@@ -97,7 +97,7 @@ static ssize_t cuse_read_iter(struct kiocb *kiocb, struct iov_iter *to)
 	return fuse_direct_io(&io, to, &pos, FUSE_DIO_CUSE);
 }
 
-static ssize_t cuse_write_iter(struct kiocb *kiocb, struct iov_iter *from)
+static ssize_t cuse_write_iter(struct kiocb* kiocb, struct iov_iter* from)
 {
 	struct fuse_io_priv io = FUSE_IO_PRIV_SYNC(kiocb);
 	loff_t pos = 0;
@@ -106,13 +106,13 @@ static ssize_t cuse_write_iter(struct kiocb *kiocb, struct iov_iter *from)
 	 * responsible for locking and sanity checks.
 	 */
 	return fuse_direct_io(&io, from, &pos,
-			      FUSE_DIO_WRITE | FUSE_DIO_CUSE);
+		FUSE_DIO_WRITE | FUSE_DIO_CUSE);
 }
 
-static int cuse_open(struct inode *inode, struct file *file)
+static int cuse_open(struct inode* inode, struct file* file)
 {
 	dev_t devt = inode->i_cdev->dev;
-	struct cuse_conn *cc = NULL, *pos;
+	struct cuse_conn* cc = NULL, * pos;
 	int rc;
 
 	/* look up and get the connection */
@@ -139,10 +139,10 @@ static int cuse_open(struct inode *inode, struct file *file)
 	return rc;
 }
 
-static int cuse_release(struct inode *inode, struct file *file)
+static int cuse_release(struct inode* inode, struct file* file)
 {
-	struct fuse_file *ff = file->private_data;
-	struct fuse_conn *fc = ff->fc;
+	struct fuse_file* ff = file->private_data;
+	struct fuse_conn* fc = ff->fc;
 
 	fuse_sync_release(ff, file->f_flags);
 	fuse_conn_put(fc);
@@ -150,11 +150,11 @@ static int cuse_release(struct inode *inode, struct file *file)
 	return 0;
 }
 
-static long cuse_file_ioctl(struct file *file, unsigned int cmd,
-			    unsigned long arg)
+static long cuse_file_ioctl(struct file* file, unsigned int cmd,
+	unsigned long arg)
 {
-	struct fuse_file *ff = file->private_data;
-	struct cuse_conn *cc = fc_to_cc(ff->fc);
+	struct fuse_file* ff = file->private_data;
+	struct cuse_conn* cc = fc_to_cc(ff->fc);
 	unsigned int flags = 0;
 
 	if (cc->unrestricted_ioctl)
@@ -163,11 +163,11 @@ static long cuse_file_ioctl(struct file *file, unsigned int cmd,
 	return fuse_do_ioctl(file, cmd, arg, flags);
 }
 
-static long cuse_file_compat_ioctl(struct file *file, unsigned int cmd,
-				   unsigned long arg)
+static long cuse_file_compat_ioctl(struct file* file, unsigned int cmd,
+	unsigned long arg)
 {
-	struct fuse_file *ff = file->private_data;
-	struct cuse_conn *cc = fc_to_cc(ff->fc);
+	struct fuse_file* ff = file->private_data;
+	struct cuse_conn* cc = fc_to_cc(ff->fc);
 	unsigned int flags = FUSE_IOCTL_COMPAT;
 
 	if (cc->unrestricted_ioctl)
@@ -177,15 +177,15 @@ static long cuse_file_compat_ioctl(struct file *file, unsigned int cmd,
 }
 
 static const struct file_operations cuse_frontend_fops = {
-	.owner			= THIS_MODULE,
-	.read_iter		= cuse_read_iter,
-	.write_iter		= cuse_write_iter,
-	.open			= cuse_open,
-	.release		= cuse_release,
-	.unlocked_ioctl		= cuse_file_ioctl,
-	.compat_ioctl		= cuse_file_compat_ioctl,
-	.poll			= fuse_file_poll,
-	.llseek		= noop_llseek,
+	.owner = THIS_MODULE,
+	.read_iter = cuse_read_iter,
+	.write_iter = cuse_write_iter,
+	.open = cuse_open,
+	.release = cuse_release,
+	.unlocked_ioctl = cuse_file_ioctl,
+	.compat_ioctl = cuse_file_compat_ioctl,
+	.poll = fuse_file_poll,
+	.llseek = noop_llseek,
 };
 
 
@@ -194,7 +194,7 @@ static const struct file_operations cuse_frontend_fops = {
  */
 
 struct cuse_devinfo {
-	const char		*name;
+	const char* name;
 };
 
 /**
@@ -213,10 +213,10 @@ struct cuse_devinfo {
  * RETURNS:
  * 1 on successful parse, 0 on EOF, -errno on failure.
  */
-static int cuse_parse_one(char **pp, char *end, char **keyp, char **valp)
+static int cuse_parse_one(char** pp, char* end, char** keyp, char** valp)
 {
-	char *p = *pp;
-	char *key, *val;
+	char* p = *pp;
+	char* key, * val;
 
 	while (p < end && *p == '\0')
 		p++;
@@ -237,7 +237,8 @@ static int cuse_parse_one(char **pp, char *end, char **keyp, char **valp)
 			val = key + strlen(key);
 		key = strstrip(key);
 		val = strstrip(val);
-	} else
+	}
+	else
 		key = strstrip(key);
 
 	if (!strlen(key)) {
@@ -266,10 +267,10 @@ static int cuse_parse_one(char **pp, char *end, char **keyp, char **valp)
  * RETURNS:
  * 0 on success, -errno on failure.
  */
-static int cuse_parse_devinfo(char *p, size_t len, struct cuse_devinfo *devinfo)
+static int cuse_parse_devinfo(char* p, size_t len, struct cuse_devinfo* devinfo)
 {
-	char *end = p + len;
-	char *uninitialized_var(key), *uninitialized_var(val);
+	char* end = p + len;
+	char* uninitialized_var(key), * uninitialized_var(val);
 	int rc;
 
 	while (true) {
@@ -282,7 +283,7 @@ static int cuse_parse_devinfo(char *p, size_t len, struct cuse_devinfo *devinfo)
 			devinfo->name = val;
 		else
 			printk(KERN_WARNING "CUSE: unknown device info \"%s\"\n",
-			       key);
+				key);
 	}
 
 	if (!devinfo->name || !strlen(devinfo->name)) {
@@ -293,7 +294,7 @@ static int cuse_parse_devinfo(char *p, size_t len, struct cuse_devinfo *devinfo)
 	return 0;
 }
 
-static void cuse_gendev_release(struct device *dev)
+static void cuse_gendev_release(struct device* dev)
 {
 	kfree(dev);
 }
@@ -305,19 +306,19 @@ static void cuse_gendev_release(struct device *dev)
  * required data structures for it.  Please read the comment at the
  * top of this file for high level overview.
  */
-static void cuse_process_init_reply(struct fuse_conn *fc, struct fuse_req *req)
+static void cuse_process_init_reply(struct fuse_conn* fc, struct fuse_req* req)
 {
-	struct cuse_conn *cc = fc_to_cc(fc), *pos;
-	struct cuse_init_out *arg = req->out.args[0].value;
-	struct page *page = req->pages[0];
+	struct cuse_conn* cc = fc_to_cc(fc), * pos;
+	struct cuse_init_out* arg = req->out.args[0].value;
+	struct page* page = req->pages[0];
 	struct cuse_devinfo devinfo = { };
-	struct device *dev;
-	struct cdev *cdev;
+	struct device* dev;
+	struct cdev* cdev;
 	dev_t devt;
 	int rc, i;
 
 	if (req->out.h.error ||
-	    arg->major != FUSE_KERNEL_VERSION || arg->minor < 11) {
+		arg->major != FUSE_KERNEL_VERSION || arg->minor < 11) {
 		goto err;
 	}
 
@@ -329,7 +330,7 @@ static void cuse_process_init_reply(struct fuse_conn *fc, struct fuse_req *req)
 	cc->unrestricted_ioctl = arg->flags & CUSE_UNRESTRICTED_IOCTL;
 
 	rc = cuse_parse_devinfo(page_address(page), req->out.args[1].size,
-				&devinfo);
+		&devinfo);
 	if (rc)
 		goto err;
 
@@ -411,14 +412,14 @@ err:
 	goto out;
 }
 
-static int cuse_send_init(struct cuse_conn *cc)
+static int cuse_send_init(struct cuse_conn* cc)
 {
 	int rc;
-	struct fuse_req *req;
-	struct page *page;
-	struct fuse_conn *fc = &cc->fc;
-	struct cuse_init_in *arg;
-	void *outarg;
+	struct fuse_req* req;
+	struct page* page;
+	struct fuse_conn* fc = &cc->fc;
+	struct cuse_init_in* arg;
+	void* outarg;
 
 	BUILD_BUG_ON(CUSE_INIT_INFO_MAX > PAGE_SIZE);
 
@@ -467,9 +468,9 @@ err:
 	return rc;
 }
 
-static void cuse_fc_release(struct fuse_conn *fc)
+static void cuse_fc_release(struct fuse_conn* fc)
 {
-	struct cuse_conn *cc = fc_to_cc(fc);
+	struct cuse_conn* cc = fc_to_cc(fc);
 	kfree_rcu(cc, fc.rcu);
 }
 
@@ -488,10 +489,10 @@ static void cuse_fc_release(struct fuse_conn *fc)
  * RETURNS:
  * 0 on success, -errno on failure.
  */
-static int cuse_channel_open(struct inode *inode, struct file *file)
+static int cuse_channel_open(struct inode* inode, struct file* file)
 {
-	struct fuse_dev *fud;
-	struct cuse_conn *cc;
+	struct fuse_dev* fud;
+	struct cuse_conn* cc;
 	int rc;
 
 	/* set up cuse_conn */
@@ -536,10 +537,10 @@ static int cuse_channel_open(struct inode *inode, struct file *file)
  * RETURNS:
  * 0 on success, -errno on failure.
  */
-static int cuse_channel_release(struct inode *inode, struct file *file)
+static int cuse_channel_release(struct inode* inode, struct file* file)
 {
-	struct fuse_dev *fud = file->private_data;
-	struct cuse_conn *cc = fc_to_cc(fud->fc);
+	struct fuse_dev* fud = file->private_data;
+	struct cuse_conn* cc = fc_to_cc(fud->fc);
 	int rc;
 
 	/* remove from the conntbl, no more access from this point on */
@@ -571,27 +572,27 @@ static struct file_operations cuse_channel_fops; /* initialized during init */
  * CUSE exports the same set of attributes to sysfs as fusectl.
  */
 
-static ssize_t cuse_class_waiting_show(struct device *dev,
-				       struct device_attribute *attr, char *buf)
+static ssize_t cuse_class_waiting_show(struct device* dev,
+	struct device_attribute* attr, char* buf)
 {
-	struct cuse_conn *cc = dev_get_drvdata(dev);
+	struct cuse_conn* cc = dev_get_drvdata(dev);
 
 	return sprintf(buf, "%d\n", atomic_read(&cc->fc.num_waiting));
 }
 static DEVICE_ATTR(waiting, 0400, cuse_class_waiting_show, NULL);
 
-static ssize_t cuse_class_abort_store(struct device *dev,
-				      struct device_attribute *attr,
-				      const char *buf, size_t count)
+static ssize_t cuse_class_abort_store(struct device* dev,
+	struct device_attribute* attr,
+	const char* buf, size_t count)
 {
-	struct cuse_conn *cc = dev_get_drvdata(dev);
+	struct cuse_conn* cc = dev_get_drvdata(dev);
 
 	fuse_abort_conn(&cc->fc, false);
 	return count;
 }
 static DEVICE_ATTR(abort, 0200, NULL, cuse_class_abort_store);
 
-static struct attribute *cuse_class_dev_attrs[] = {
+static struct attribute* cuse_class_dev_attrs[] = {
 	&dev_attr_waiting.attr,
 	&dev_attr_abort.attr,
 	NULL,
@@ -599,9 +600,9 @@ static struct attribute *cuse_class_dev_attrs[] = {
 ATTRIBUTE_GROUPS(cuse_class_dev);
 
 static struct miscdevice cuse_miscdev = {
-	.minor		= CUSE_MINOR,
-	.name		= "cuse",
-	.fops		= &cuse_channel_fops,
+	.minor = CUSE_MINOR,
+	.name = "cuse",
+	.fops = &cuse_channel_fops,
 };
 
 MODULE_ALIAS_MISCDEV(CUSE_MINOR);
@@ -616,10 +617,10 @@ static int __init cuse_init(void)
 		INIT_LIST_HEAD(&cuse_conntbl[i]);
 
 	/* inherit and extend fuse_dev_operations */
-	cuse_channel_fops		= fuse_dev_operations;
-	cuse_channel_fops.owner		= THIS_MODULE;
-	cuse_channel_fops.open		= cuse_channel_open;
-	cuse_channel_fops.release	= cuse_channel_release;
+	cuse_channel_fops = fuse_dev_operations;
+	cuse_channel_fops.owner = THIS_MODULE;
+	cuse_channel_fops.open = cuse_channel_open;
+	cuse_channel_fops.release = cuse_channel_release;
 
 	cuse_class = class_create(THIS_MODULE, "cuse");
 	if (IS_ERR(cuse_class))

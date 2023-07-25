@@ -415,6 +415,35 @@ static inline bool gfpflags_allow_blocking(const gfp_t gfp_flags)
 	| 1 << (___GFP_MOVABLE | ___GFP_DMA32 | ___GFP_DMA | ___GFP_HIGHMEM)  \
 )
 
+static inline enum zone_type gfp_zone(gfp_t flags)
+{
+ int base = 0;
+
+#ifdef CONFIG_NUMA
+ if (flags & __GFP_THISNODE)
+  base = MAX_NR_ZONES;
+#endif
+
+//只要掩码 flags 中设置了 __GFP_DMA，则不管 __GFP_HIGHMEM 有没有设置，内存分配都只会在 ZONE_DMA 区域中分配。
+#ifdef CONFIG_ZONE_DMA
+ if (flags & __GFP_DMA)
+  return base + ZONE_DMA;
+#endif
+#ifdef CONFIG_ZONE_DMA32
+ if (flags & __GFP_DMA32)
+  return base + ZONE_DMA32;
+#endif
+ if ((flags & (__GFP_HIGHMEM | __GFP_MOVABLE)) ==
+   (__GFP_HIGHMEM | __GFP_MOVABLE))
+  return base + ZONE_MOVABLE;
+#ifdef CONFIG_HIGHMEM
+ if (flags & __GFP_HIGHMEM)
+  return base + ZONE_HIGHMEM;
+#endif
+    // 默认从 normal 区域中分配内存
+ return base + ZONE_NORMAL;
+}
+
 //用来计算 highest_zoneidx
 static inline enum zone_type gfp_zone(gfp_t flags)
 {
@@ -481,7 +510,9 @@ __alloc_pages(gfp_t gfp_mask, unsigned int order, int preferred_nid)
 static inline struct page *
 __alloc_pages_node(int nid, gfp_t gfp_mask, unsigned int order)
 {
+	//检验NUMA节点ID是否合法
 	VM_BUG_ON(nid < 0 || nid >= MAX_NUMNODES);
+	//指定节点必须在线有效
 	VM_WARN_ON((gfp_mask & __GFP_THISNODE) && !node_online(nid));
 
 	return __alloc_pages(gfp_mask, order, nid);

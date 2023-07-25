@@ -269,10 +269,14 @@ For 32-bit we have the following conventions - kernel is built with
 	 * are active. If clear CR3 already has the kernel page table
 	 * active.
 	 */
+	//#define PTI_USER_PGTABLE_BIT		PAGE_SHIFT
+	//如果第12位被设置，那么说明当前使用的是用户页表，bt 测试，并用原值设置进位
 	bt	$PTI_USER_PGTABLE_BIT, \scratch_reg
+	//如果没有进位，说明第12是0，已经用的是内核页表了，直接 jmp done
 	jnc	.Ldone_\@
-
+	//这里将第12位清0（还有其他的，忽略这里）
 	ADJUST_KERNEL_CR3 \scratch_reg
+	//重新设置 CR3，切换为内核页表
 	movq	\scratch_reg, %cr3
 
 .Ldone_\@:

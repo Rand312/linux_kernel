@@ -68,6 +68,7 @@ struct hmm;
 #endif
 
 struct page {
+	//存储page的定位信息及相关标志位
 	unsigned long flags;		/* Atomic flags, some possibly
 					 * updated asynchronously */
 	/*
@@ -83,9 +84,14 @@ struct page {
 			 * zone_lru_lock.  Sometimes used as a generic list
 			 * by the page owner.
 			 */
+			// 用来指向物理页 page 被放置在了哪个 lru 链表上
 			struct list_head lru;
 			/* See page-flags.h for PAGE_MAPPING_FLAGS */
+			// 如果 page 为文件页的话，低位为0，指向 page 所在的 page cache
+			// 如果 page 为匿名页的话，低位为1，指向其对应虚拟地址空间的匿名映射区 anon_vma
 			struct address_space *mapping;
+			// 如果 page 为文件页的话，index 为 page 在 page cache 中的索引
+			// 如果 page 为匿名页的话，表示匿名页在对应进程虚拟内存区域 VMA 中的偏移
 			pgoff_t index;		/* Our offset within mapping. */
 			/**
 			 * @private: Mapping-private opaque data.
@@ -97,11 +103,15 @@ struct page {
 		};
 		struct {	/* slab, slob and slub */
 			union {
+				// 用于指定当前 page 位于 slab 中的哪个具体管理链表上。
 				struct list_head slab_list;	/* uses lru */
 				struct {	/* Partial pages */
+					// 当 page 位于 slab 结构中的某个管理链表上时，next 指针用于指向链表中的下一个 page
 					struct page *next;
 #ifdef CONFIG_64BIT
+					// 表示 slab 中总共拥有的 page 个数
 					int pages;	/* Nr of pages left */
+					// 表示 slab 中拥有的特定类型的对象个数
 					int pobjects;	/* Approximate count */
 #else
 					short int pages;
@@ -109,25 +119,40 @@ struct page {
 #endif
 				};
 			};
+			// 用于指向当前 page 所属的 slab 管理结构
 			struct kmem_cache *slab_cache; /* not slob */
 			/* Double-word boundary */
+			// 指向 page 中的第一个未分配出去的空闲对象
 			void *freelist;		/* first free object */
 			union {
+				// 指向 page 中的第一个对象
 				void *s_mem;	/* slab: first object */
 				unsigned long counters;		/* SLUB */
 				struct {			/* SLUB */
+					// 表示 slab 中已经被分配出去的对象个数
 					unsigned inuse:16;
+					// slab 中所有的对象个数
 					unsigned objects:15;
+					// 当前内存页 page 被 slab 放置在 CPU 本地缓存列表中，frozen = 1，否则 frozen = 0
 					unsigned frozen:1;
 				};
 			};
 		};
-		struct {	/* Tail pages of compound page */
-			unsigned long compound_head;	/* Bit zero is set */
+		//在Linux内核中，"Compound Page" 是一种用于表示大块连续物理内存区域的数据结构。
+		//普通的内存页在大部分系统中的大小通常为4KB。
+		//然而，有时候，应用程序或者内核可能需要一大块连续的物理内存，这就是 Compound Page 的用武之地。
 
+		//Compound Pages 一般由多个连续的普通页组成，它们的数量通常是2的幂。
+		//比如，一个由两个连续页组成的 Compound Page，它的大小就是8KB（假设每个普通页的大小为4KB）。
+		struct {	/* Tail pages of compound page */
+			// 复合页的尾页指向首页
+			unsigned long compound_head;	/* Bit zero is set */
 			/* First tail page only */
+			// 用于释放复合页的析构函数，保存在首页中
 			unsigned char compound_dtor;
+			// 该复合页有多少个 page 组成
 			unsigned char compound_order;
+			// 该复合页被多少个进程使用，内存页反向映射的概念，首页中保存
 			atomic_t compound_mapcount;
 		};
 		struct {	/* Second tail page of compound page */
@@ -157,6 +182,7 @@ struct page {
 		};
 
 		/** @rcu_head: You can use this to free a page by RCU. */
+		// 表示 slab 中需要释放回收的对象链表
 		struct rcu_head rcu_head;
 	};
 
@@ -165,6 +191,7 @@ struct page {
 		 * If the page can be mapped to userspace, encodes the number
 		 * of times this page is referenced by a page table.
 		 */
+		// 表示该 page 映射了多少个进程的虚拟内存空间，一个 page 可以被多个进程映射
 		atomic_t _mapcount;
 
 		/*
@@ -180,6 +207,7 @@ struct page {
 	};
 
 	/* Usage count. *DO NOT USE DIRECTLY*. See page_ref.h */
+	// 内核中引用该物理页的次数，表示该物理页的活跃程度
 	atomic_t _refcount;
 
 #ifdef CONFIG_MEMCG
