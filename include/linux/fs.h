@@ -302,12 +302,13 @@ enum rw_hint {
 #define IOCB_WRITE		(1 << 6)
 #define IOCB_NOWAIT		(1 << 7)
 
+//kiocb 描述一次异步IO的 文件侧，而 iov_iter 从内存角度描述
 struct kiocb {
-	struct file		*ki_filp;
-	loff_t			ki_pos;
-	void (*ki_complete)(struct kiocb *iocb, long ret, long ret2);
+	struct file		*ki_filp;  //异步IO操作的文件对象
+	loff_t			ki_pos;  //数据偏移
+	void (*ki_complete)(struct kiocb *iocb, long ret, long ret2); //IO完成时的回调
 	void			*private;
-	int			ki_flags;
+	int			ki_flags;  //IO属性
 	u16			ki_hint;
 	u16			ki_ioprio; /* See linux/ioprio.h */
 } __randomize_layout;

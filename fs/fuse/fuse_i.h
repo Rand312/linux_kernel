@@ -355,6 +355,7 @@ enum fuse_req_flag {
  *   - FR_ABORTED
  *   - FR_LOCKED (may also be modified under fc->lock, tested under both)
  */
+//向用户态发送请求的结构体
 struct fuse_req {
 	/** This can be on either pending processing or io lists in
 	    fuse_conn */
@@ -466,6 +467,7 @@ struct fuse_iqueue {
 #define FUSE_PQ_HASH_BITS 8
 #define FUSE_PQ_HASH_SIZE (1 << FUSE_PQ_HASH_BITS)
 
+//processing queue
 struct fuse_pqueue {
 	/** Connection established */
 	unsigned connected;
@@ -569,6 +571,7 @@ struct fuse_conn {
 	/** Flag indicating if connection is blocked.  This will be
 	    the case before the INIT reply is received, and if there
 	    are too many outstading backgrounds requests */
+	//接收到 INIT reply 之前 或者 有太多的 backgrounds request 的时候就会 block
 	int blocked;
 
 	/** waitq for blocked connection */

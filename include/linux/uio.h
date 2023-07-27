@@ -17,6 +17,7 @@
 struct page;
 struct pipe_inode_info;
 
+//基址+偏移？ 描述一段空间
 struct kvec {
 	void *iov_base; /* and that should *never* hold a userland pointer */
 	size_t iov_len;
@@ -29,19 +30,20 @@ enum iter_type {
 	ITER_PIPE = 8,
 	ITER_DISCARD = 16,
 };
-
+// iov_offset和count记录当前处理进度
 struct iov_iter {
+	//标志属性，比如读？写？
 	unsigned int type;
 	size_t iov_offset;
 	size_t count;
 	union {
-		const struct iovec *iov;
-		const struct kvec *kvec;
-		const struct bio_vec *bvec;
+		const struct iovec *iov;  //描述用户态的一段空间
+		const struct kvec *kvec;  //描述内核态的一段空间
+		const struct bio_vec *bvec;  //描述内存页中的一段空间
 		struct pipe_inode_info *pipe;
 	};
 	union {
-		unsigned long nr_segs;
+		unsigned long nr_segs;  //iovec 的数量
 		struct {
 			int idx;
 			int start_idx;

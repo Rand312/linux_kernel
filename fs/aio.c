@@ -690,6 +690,9 @@ static void aio_nr_sub(unsigned nr)
 /* ioctx_alloc
  *	Allocates and initializes an ioctx.  Returns an ERR_PTR if it failed.
  */
+// 调用 kmem_cache_alloc 函数向内核申请一个异步 IO 上下文对象。
+// 初始化异步 IO 上下文各个成员变量，如初始化异步 IO 操作队列。
+// 调用 aio_setup_ring 函数初始化环形缓冲区。
 static struct kioctx *ioctx_alloc(unsigned nr_events)
 {
 	struct mm_struct *mm = current->mm;
@@ -1065,6 +1068,7 @@ static inline void iocb_put(struct aio_kiocb *iocb)
 	}
 }
 
+// 保存异步IO结果到环形缓冲区中
 static void aio_fill_event(struct io_event *ev, struct aio_kiocb *iocb,
 			   long res, long res2)
 {
@@ -1077,6 +1081,7 @@ static void aio_fill_event(struct io_event *ev, struct aio_kiocb *iocb,
 /* aio_complete
  *	Called when the io request on the given iocb is complete.
  */
+//当异步 IO 操作完成后，内核会调用 aio_complete 函数来把处理结果放进异步 IO 上下文的环形缓冲区 ring_info 中
 static void aio_complete(struct aio_kiocb *iocb, long res, long res2)
 {
 	struct kioctx	*ctx = iocb->ki_ctx;
@@ -1275,6 +1280,7 @@ static long read_events(struct kioctx *ctx, long min_nr, long nr,
 	 * something to be aware of when touching this code.
 	 */
 	if (until == 0)
+		// 从环形缓冲区中读取一个IO处理结果
 		aio_read_events(ctx, min_nr, nr, event, &ret);
 	else
 		wait_event_interruptible_hrtimeout(ctx->wait,
@@ -1853,8 +1859,12 @@ static int __io_submit_one(struct kioctx *ctx, const struct iocb *iocb,
 	req->ki_user_iocb = user_iocb;
 	req->ki_user_data = iocb->aio_data;
 
+	// 根据不同的异步IO操作类型来进行不同的处理
 	switch (iocb->aio_lio_opcode) {
+	// 异步读操作
 	case IOCB_CMD_PREAD:
+		// 发起异步IO操作, 会根据不同的文件系统调用不同的函数:
+        // 如ext3文件系统会调用 generic_file_aio_read 函数
 		ret = aio_read(&req->rw, iocb, false, compat);
 		break;
 	case IOCB_CMD_PWRITE:
@@ -1931,7 +1941,7 @@ SYSCALL_DEFINE3(io_submit, aio_context_t, ctx_id, long, nr,
 
 	if (unlikely(nr < 0))
 		return -EINVAL;
-
+	//通过异步IO上下文标志符获取异步IO上下文对象
 	ctx = lookup_ioctx(ctx_id);
 	if (unlikely(!ctx)) {
 		pr_debug("EINVAL: invalid context id\n");
@@ -1944,13 +1954,14 @@ SYSCALL_DEFINE3(io_submit, aio_context_t, ctx_id, long, nr,
 	if (nr > AIO_PLUG_THRESHOLD)
 		blk_start_plug(&plug);
 	for (i = 0; i < nr; i++) {
+		// 从用户空间复制异步IO操作到内核空间
 		struct iocb __user *user_iocb;
 
 		if (unlikely(get_user(user_iocb, iocbpp + i))) {
 			ret = -EFAULT;
 			break;
 		}
-
+		// 调用 io_submit_one 函数提交异步IO操作
 		ret = io_submit_one(ctx, user_iocb, false);
 		if (ret)
 			break;
@@ -2084,6 +2095,7 @@ static long do_io_getevents(aio_context_t ctx_id,
 
 	if (likely(ioctx)) {
 		if (likely(min_nr <= nr && min_nr >= 0))
+			// 调用 read_events 函数读取IO操作的结果
 			ret = read_events(ioctx, min_nr, nr, events, until);
 		percpu_ref_put(&ioctx->users);
 	}

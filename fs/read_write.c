@@ -398,9 +398,11 @@ static ssize_t new_sync_read(struct file *filp, char __user *buf, size_t len, lo
 	struct kiocb kiocb;
 	struct iov_iter iter;
 	ssize_t ret;
-
+	//分配并初始化一个 kiocb 结构体
 	init_sync_kiocb(&kiocb, filp);
+	//设置偏移量
 	kiocb.ki_pos = *ppos;
+	//初始化 iov
 	iov_iter_init(&iter, READ, &iov, 1, len);
 
 	ret = call_read_iter(filp, &kiocb, &iter);
@@ -412,6 +414,7 @@ static ssize_t new_sync_read(struct file *filp, char __user *buf, size_t len, lo
 ssize_t __vfs_read(struct file *file, char __user *buf, size_t count,
 		   loff_t *pos)
 {
+	//如果有单纯的 read 那么就调用 read，没有的话，调用 read_iter
 	if (file->f_op->read)
 		return file->f_op->read(file, buf, count, pos);
 	else if (file->f_op->read_iter)

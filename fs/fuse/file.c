@@ -510,7 +510,7 @@ out:
 
 	return err;
 }
-
+//填充 read 请求
 void fuse_read_fill(struct fuse_req *req, struct file *file, loff_t pos,
 		    size_t count, int opcode)
 {
