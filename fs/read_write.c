@@ -394,13 +394,14 @@ int rw_verify_area(int read_write, struct file *file, const loff_t *ppos, size_t
 
 static ssize_t new_sync_read(struct file *filp, char __user *buf, size_t len, loff_t *ppos)
 {
+	//对于普通 read 来说，只需要用到一个 iovec，这里定义并初始化它
 	struct iovec iov = { .iov_base = buf, .iov_len = len };
 	struct kiocb kiocb;
 	struct iov_iter iter;
 	ssize_t ret;
-	//分配并初始化一个 kiocb 结构体
+	//分配并初始化一个 kiocb 结构体，这里就是设置了 filp
 	init_sync_kiocb(&kiocb, filp);
-	//设置偏移量
+	//然后设置偏移量
 	kiocb.ki_pos = *ppos;
 	//初始化 iov
 	iov_iter_init(&iter, READ, &iov, 1, len);

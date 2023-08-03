@@ -184,6 +184,7 @@ static int fuse_dentry_revalidate(struct dentry *entry, unsigned int flags)
 	inode = d_inode_rcu(entry);
 	if (inode && is_bad_inode(inode))
 		goto invalid;
+	//fuse_dentry_time 已经过时
 	else if (time_before64(fuse_dentry_time(entry), get_jiffies_64()) ||
 		 (flags & LOOKUP_REVAL)) {
 		struct fuse_entry_out outarg;
@@ -209,8 +210,10 @@ static int fuse_dentry_revalidate(struct dentry *entry, unsigned int flags)
 		attr_version = fuse_get_attr_version(fc);
 
 		parent = dget_parent(entry);
+		//初始化 lookup 请求
 		fuse_lookup_init(fc, &args, get_node_id(d_inode(parent)),
 				 &entry->d_name, &outarg);
+		//发送 lookup 请求到用户态
 		ret = fuse_simple_request(fc, &args);
 		dput(parent);
 		/* Zero nodeid is same as -ENOENT */
@@ -236,6 +239,7 @@ static int fuse_dentry_revalidate(struct dentry *entry, unsigned int flags)
 		fuse_change_attributes(inode, &outarg.attr,
 				       entry_attr_timeout(&outarg),
 				       attr_version);
+		//重新设置超时时间
 		fuse_change_entry_timeout(entry, &outarg);
 	} else if (inode) {
 		fi = get_fuse_inode(inode);
@@ -257,6 +261,8 @@ invalid:
 	goto out;
 }
 
+//利用 dentry->d_fsdata 设置 fuse 文件系统特有的 dentry 数据:fuse_dentry
+//就是一个 超时 时间和 rcu
 static int fuse_dentry_init(struct dentry *dentry)
 {
 	dentry->d_fsdata = kzalloc(sizeof(union fuse_dentry), GFP_KERNEL);
@@ -309,6 +315,7 @@ int fuse_lookup_name(struct super_block *sb, u64 nodeid, const struct qstr *name
 
 	attr_version = fuse_get_attr_version(fc);
 
+	//准备 lookup 请求
 	fuse_lookup_init(fc, &args, nodeid, name, outarg);
 	err = fuse_simple_request(fc, &args);
 	/* Zero nodeid is same as -ENOENT, but with valid timeout */
@@ -316,11 +323,14 @@ int fuse_lookup_name(struct super_block *sb, u64 nodeid, const struct qstr *name
 		goto out_put_forget;
 
 	err = -EIO;
+	//检查 nodeid、文件 type 是否有效
 	if (!outarg->nodeid)
 		goto out_put_forget;
 	if (!fuse_valid_type(outarg->attr.mode))
 		goto out_put_forget;
 
+	//设置 inode 的属性，并返回对应的 vfs inode
+	//inode->i_generation 是指 Linux 文件系统中的 i-node 结构体中的一个字段，用于表示该 i-node 的版本号
 	*inode = fuse_iget(sb, outarg->nodeid, outarg->generation,
 			   &outarg->attr, entry_attr_timeout(outarg),
 			   attr_version);
@@ -368,8 +378,10 @@ static struct dentry *fuse_lookup(struct inode *dir, struct dentry *entry,
 		goto out_err;
 
 	entry = newent ? newent : entry;
+	//根据 outarg_valid 重新设置超时时间
 	if (outarg_valid)
 		fuse_change_entry_timeout(entry, &outarg);
+	//否则 invalidate dentry
 	else
 		fuse_invalidate_entry_cache(entry);
 
@@ -427,15 +439,19 @@ static int fuse_create_open(struct inode *dir, struct dentry *entry,
 	args.in.h.opcode = FUSE_CREATE;
 	args.in.h.nodeid = get_node_id(dir);
 	args.in.numargs = 2;
+	//第一个参数设置为 inarg
 	args.in.args[0].size = sizeof(inarg);
 	args.in.args[0].value = &inarg;
+	//第二个参数设置为 目录项名字 
 	args.in.args[1].size = entry->d_name.len + 1;
 	args.in.args[1].value = entry->d_name.name;
+	//初始化 out arg
 	args.out.numargs = 2;
 	args.out.args[0].size = sizeof(outentry);
 	args.out.args[0].value = &outentry;
 	args.out.args[1].size = sizeof(outopen);
 	args.out.args[1].value = &outopen;
+	//向用户态发送请求
 	err = fuse_simple_request(fc, &args);
 	if (err)
 		goto out_free_ff;
@@ -447,8 +463,10 @@ static int fuse_create_open(struct inode *dir, struct dentry *entry,
 	ff->fh = outopen.fh;
 	ff->nodeid = outentry.nodeid;
 	ff->open_flags = outopen.open_flags;
+	//根据传过来的信息获取 inode
 	inode = fuse_iget(dir->i_sb, outentry.nodeid, outentry.generation,
 			  &outentry.attr, entry_attr_timeout(&outentry), 0);
+	//如果不存在，则forget
 	if (!inode) {
 		flags &= ~(O_CREAT | O_EXCL | O_TRUNC);
 		fuse_sync_release(ff, flags);
@@ -457,7 +475,9 @@ static int fuse_create_open(struct inode *dir, struct dentry *entry,
 		goto out_err;
 	}
 	kfree(forget);
+	//将 entry 和 inode 给联系起来
 	d_instantiate(entry, inode);
+	//重新设置 timeout 时间
 	fuse_change_entry_timeout(entry, &outentry);
 	fuse_dir_changed(dir);
 	err = finish_open(file, entry, generic_file_open);
@@ -504,6 +524,7 @@ static int fuse_atomic_open(struct inode *dir, struct dentry *entry,
 	if (fc->no_create)
 		goto mknod;
 
+	//create + open
 	err = fuse_create_open(dir, entry, file, flags, mode);
 	if (err == -ENOSYS) {
 		fc->no_create = 1;
@@ -538,6 +559,7 @@ static int create_new_entry(struct fuse_conn *fc, struct fuse_args *args,
 	if (!forget)
 		return -ENOMEM;
 
+	//准备参数，然后请求，opcode 为上层函数设置
 	memset(&outarg, 0, sizeof(outarg));
 	args->in.h.nodeid = get_node_id(dir);
 	args->out.numargs = 1;
@@ -554,6 +576,7 @@ static int create_new_entry(struct fuse_conn *fc, struct fuse_args *args,
 	if ((outarg.attr.mode ^ mode) & S_IFMT)
 		goto out_put_forget_req;
 
+	//获取inode
 	inode = fuse_iget(dir->i_sb, outarg.nodeid, outarg.generation,
 			  &outarg.attr, entry_attr_timeout(&outarg), 0);
 	if (!inode) {
@@ -595,6 +618,7 @@ static int fuse_mknod(struct inode *dir, struct dentry *entry, umode_t mode,
 	inarg.mode = mode;
 	inarg.rdev = new_encode_dev(rdev);
 	inarg.umask = current_umask();
+	//mknod 请求
 	args.in.h.opcode = FUSE_MKNOD;
 	args.in.numargs = 2;
 	args.in.args[0].size = sizeof(inarg);
@@ -651,6 +675,10 @@ void fuse_update_ctime(struct inode *inode)
 {
 	if (!IS_NOCMTIME(inode)) {
 		inode->i_ctime = current_time(inode);
+		//mark_inode_dirty_sync() 函数会将给定的 inode 节点标记为“已修改”，
+		//并在必要时将其所属的文件系统挂载为“脏”（dirty）。
+		//这将触发 VFS 层的回调函数，来将这些修改同步到磁盘上。
+		//如果同步成功，该 inode 节点将被标记为“未修改”，文件系统也将被标记为“干净”（clean）
 		mark_inode_dirty_sync(inode);
 	}
 }
@@ -667,6 +695,7 @@ static int fuse_unlink(struct inode *dir, struct dentry *entry)
 	args.in.args[0].size = entry->d_name.len + 1;
 	args.in.args[0].value = entry->d_name.name;
 	err = fuse_simple_request(fc, &args);
+	//如果没出错的话
 	if (!err) {
 		struct inode *inode = d_inode(entry);
 		struct fuse_inode *fi = get_fuse_inode(inode);
@@ -703,9 +732,12 @@ static int fuse_rmdir(struct inode *dir, struct dentry *entry)
 	args.in.args[0].size = entry->d_name.len + 1;
 	args.in.args[0].value = entry->d_name.name;
 	err = fuse_simple_request(fc, &args);
+	//如果请求成功，
 	if (!err) {
+		//clear_nlink 直接将硬链接计数清0
 		clear_nlink(d_inode(entry));
 		fuse_dir_changed(dir);
+		//设置timeout为0表示时间无效
 		fuse_invalidate_entry_cache(entry);
 	} else if (err == -EINTR)
 		fuse_invalidate_entry(entry);
@@ -721,6 +753,7 @@ static int fuse_rename_common(struct inode *olddir, struct dentry *oldent,
 	struct fuse_conn *fc = get_fuse_conn(olddir);
 	FUSE_ARGS(args);
 
+	//准备 rename 请求
 	memset(&inarg, 0, argsize);
 	inarg.newdir = get_node_id(newdir);
 	inarg.flags = flags;

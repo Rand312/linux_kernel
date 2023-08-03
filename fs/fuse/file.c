@@ -43,21 +43,24 @@ static int fuse_send_open(struct fuse_conn *fc, u64 nodeid, struct file *file,
 	return fuse_simple_request(fc, &args);
 }
 
+//分配一个 fuse_file 和 相应的 req 结构体
 struct fuse_file *fuse_file_alloc(struct fuse_conn *fc)
 {
 	struct fuse_file *ff;
-
+	//分配一个 fuse_file
 	ff = kzalloc(sizeof(struct fuse_file), GFP_KERNEL);
 	if (unlikely(!ff))
 		return NULL;
-
+	
+	//初始化 fuse_file
 	ff->fc = fc;
+	//这里分配一个 req 结构体
 	ff->reserved_req = fuse_request_alloc(0);
 	if (unlikely(!ff->reserved_req)) {
 		kfree(ff);
 		return NULL;
 	}
-
+	
 	INIT_LIST_HEAD(&ff->write_entry);
 	mutex_init(&ff->readdir.lock);
 	refcount_set(&ff->count, 1);
@@ -78,6 +81,7 @@ void fuse_file_free(struct fuse_file *ff)
 	kfree(ff);
 }
 
+//refcount ++
 static struct fuse_file *fuse_file_get(struct fuse_file *ff)
 {
 	refcount_inc(&ff->count);
@@ -123,6 +127,7 @@ int fuse_do_open(struct fuse_conn *fc, u64 nodeid, struct file *file,
 	struct fuse_file *ff;
 	int opcode = isdir ? FUSE_OPENDIR : FUSE_OPEN;
 
+	//分配一个 fuse_file 结构体
 	ff = fuse_file_alloc(fc);
 	if (!ff)
 		return -ENOMEM;
@@ -132,9 +137,10 @@ int fuse_do_open(struct fuse_conn *fc, u64 nodeid, struct file *file,
 	if (!fc->no_open || isdir) {
 		struct fuse_open_out outarg;
 		int err;
-
+		//发送 open 请求
 		err = fuse_send_open(fc, nodeid, file, opcode, &outarg);
 		if (!err) {
+			//设置 file handle,即设置真正的文件fd
 			ff->fh = outarg.fh;
 			ff->open_flags = outarg.open_flags;
 
@@ -149,7 +155,9 @@ int fuse_do_open(struct fuse_conn *fc, u64 nodeid, struct file *file,
 	if (isdir)
 		ff->open_flags &= ~FOPEN_DIRECT_IO;
 
+	//设置 inode id
 	ff->nodeid = nodeid;
+	//vfs file -> private_data 设置为 fuse_file
 	file->private_data = ff;
 
 	return 0;
@@ -628,7 +636,7 @@ static void fuse_aio_complete_req(struct fuse_conn *fc, struct fuse_req *req)
 
 	fuse_aio_complete(io, req->out.h.error, pos);
 }
-
+//异步的请求则挂到 background queue 里面
 static size_t fuse_async_req_send(struct fuse_conn *fc, struct fuse_req *req,
 		size_t num_bytes, struct fuse_io_priv *io)
 {
@@ -647,6 +655,7 @@ static size_t fuse_async_req_send(struct fuse_conn *fc, struct fuse_req *req,
 	return num_bytes;
 }
 
+//发送 read 请求，
 static size_t fuse_send_read(struct fuse_req *req, struct fuse_io_priv *io,
 			     loff_t pos, size_t count, fl_owner_t owner)
 {
@@ -1137,18 +1146,20 @@ static ssize_t fuse_perform_write(struct kiocb *iocb,
 		unsigned int nr_pages = fuse_wr_pages(pos, iov_iter_count(ii),
 						      fc->max_pages);
 
+		//获取一个 req
 		req = fuse_get_req(fc, nr_pages);
 		if (IS_ERR(req)) {
 			err = PTR_ERR(req);
 			break;
 		}
-
+		//填充 req 中关于 page 的信息
 		count = fuse_fill_write_pages(req, mapping, ii, pos);
 		if (count <= 0) {
 			err = count;
 		} else {
 			size_t num_written;
 
+			//发送关于 write page 的请求
 			num_written = fuse_send_write_pages(req, iocb, inode,
 							    pos, count);
 			err = req->out.h.error;
@@ -1223,7 +1234,8 @@ static ssize_t fuse_file_write_iter(struct kiocb *iocb, struct iov_iter *from)
 			goto out;
 		}
 		endbyte = pos + written_buffered - 1;
-
+		//filemap_write_and_wait_range 函数是 Linux 内核中的一个文件系统函数，其作用是将指定区域内的数据写入文件并等待写入操作完成。
+		//具体来说，它会将位于指定区域内的脏页（即已修改但尚未写回磁盘的页）写回磁盘，并等待写回操作完成后返回
 		err = filemap_write_and_wait_range(file->f_mapping, pos,
 						   endbyte);
 		if (err)
@@ -1360,6 +1372,7 @@ ssize_t fuse_direct_io(struct fuse_io_priv *io, struct iov_iter *iter,
 	}
 
 	io->should_dirty = !write && iter_is_iovec(iter);
+	
 	while (count) {
 		size_t nres;
 		fl_owner_t owner = current->files;
@@ -1734,6 +1747,9 @@ static void fuse_writepages_send(struct fuse_fill_wb_data *data)
 	spin_unlock(&fc->lock);
 
 	for (i = 0; i < num_pages; i++)
+	//函数end_page_writeback的主要作用是标记一个页面已经完成写回。
+	//当一个缓存页被写回磁盘后，内核会调用这个函数。
+	//这个函数将清除页面的PG_writeback标志，并唤醒可能在等待这个页面完成写回的任务
 		end_page_writeback(data->orig_pages[i]);
 }
 
@@ -1934,6 +1950,7 @@ static int fuse_writepages(struct address_space *mapping,
 	if (!data.orig_pages)
 		goto out;
 
+	//找出 mapping 中需要被写回磁盘的脏页，使用 fuse_writepage_fill写入磁盘
 	err = write_cache_pages(mapping, wbc, fuse_writepages_fill, &data);
 	if (data.req) {
 		/* Ignore errors if we can write at least one page */

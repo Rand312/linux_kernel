@@ -35,6 +35,7 @@ struct iov_iter {
 	//标志属性，比如读？写？
 	unsigned int type;
 	size_t iov_offset;
+	//表示将要移动的数据量
 	size_t count;
 	union {
 		const struct iovec *iov;  //描述用户态的一段空间

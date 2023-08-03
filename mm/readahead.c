@@ -390,12 +390,15 @@ ondemand_readahead(struct address_space *mapping,
 	 * If the request exceeds the readahead window, allow the read to
 	 * be up to the optimal hardware IO size
 	 */
+	//根据条件，计算本次预读最大预读取多少个页，一般情况下是max_pages=32个页
 	if (req_size > max_pages && bdi->io_pages > max_pages)
 		max_pages = min(req_size, bdi->io_pages);
 
 	/*
 	 * start of file
 	 */
+	//offset即page index，
+	//如果page index=0，表示这是文件第一个页，跳转到initial_readahead进行处理
 	if (!offset)
 		goto initial_readahead;
 
@@ -461,10 +464,12 @@ ondemand_readahead(struct address_space *mapping,
 	 * standalone, small random read
 	 * Read as is, and do not pollute the readahead state.
 	 */
+	// 这个函数执行具体的从磁盘读取的流程
 	return __do_page_cache_readahead(mapping, filp, offset, req_size, 0);
 
 initial_readahead:
 	ra->start = offset;
+	/* get_init_ra_size初始化第一次预读的页的个数，一般情况下第一次预读是4个页 */
 	ra->size = get_init_ra_size(req_size, max_pages);
 	ra->async_size = ra->size > req_size ? ra->size - req_size : ra->size;
 
@@ -485,7 +490,10 @@ readit:
 			ra->async_size = max_pages >> 1;
 		}
 	}
-
+	/* 
+     * 经过一点处理以后，会调用__do_page_cache_readahead函数，执行具体的从磁盘读取的流程 
+     * 区别在于它是基于ra->start ra->async_size等信息进行读取
+     */
 	return ra_submit(ra, mapping, filp);
 }
 

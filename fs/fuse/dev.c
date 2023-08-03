@@ -40,6 +40,7 @@ static struct fuse_dev* fuse_get_dev(struct file* file)
 	return READ_ONCE(file->private_data);
 }
 
+//对req进行初始化操作
 static void fuse_request_init(struct fuse_req* req, struct page** pages,
 	struct fuse_page_desc* page_descs,
 	unsigned npages)
@@ -48,6 +49,7 @@ static void fuse_request_init(struct fuse_req* req, struct page** pages,
 	INIT_LIST_HEAD(&req->intr_entry);
 	init_waitqueue_head(&req->waitq);
 	refcount_set(&req->count, 1);
+	//设置req中关于page的信息
 	req->pages = pages;
 	req->page_descs = page_descs;
 	req->max_pages = npages;
@@ -58,16 +60,19 @@ static struct page** fuse_req_pages_alloc(unsigned int npages, gfp_t flags,
 	struct fuse_page_desc** desc)
 {
 	struct page** pages;
-
+	//这里只是分配了 npages 个 struct page 的指针，以及分配了一个 fuse_page_desc 描述符
 	pages = kzalloc(npages * (sizeof(struct page*) +
 		sizeof(struct fuse_page_desc)), flags);
+	//更新指针
 	*desc = (void*)pages + npages * sizeof(struct page*);
 
 	return pages;
 }
 
+//分配一个 req 结构体
 static struct fuse_req* __fuse_request_alloc(unsigned npages, gfp_t flags)
 {
+	//分配一个 req
 	struct fuse_req* req = kmem_cache_zalloc(fuse_req_cachep, flags);
 	if (req) {
 		struct page** pages = NULL;
@@ -178,6 +183,7 @@ static void fuse_drop_waiting(struct fuse_conn* fc)
 	}
 }
 
+//获取一个 req，直接分配一个
 static struct fuse_req* __fuse_get_req(struct fuse_conn* fc, unsigned npages,
 	bool for_background)
 {
@@ -248,6 +254,7 @@ EXPORT_SYMBOL_GPL(fuse_get_req_for_background);
  * currently be in use.  If that is the case, wait for it to become
  * available.
  */
+//获取 reserved_req，因为只有一个，所以可能正在被使用，如果是那么等待
 static struct fuse_req* get_reserved_req(struct fuse_conn* fc,
 	struct file* file)
 {
@@ -300,6 +307,8 @@ static void put_reserved_req(struct fuse_conn* fc, struct fuse_req* req)
  * filesystem should not have it's own file open.  If deadlock is
  * intentional, it can still be broken by "aborting" the filesystem.
  */
+//获取一个 req，肯定成功版本
+//先获取普通的req，失败的话获取 reserved req
 struct fuse_req* fuse_get_req_nofail_nopages(struct fuse_conn* fc,
 	struct file* file)
 {
@@ -309,6 +318,7 @@ struct fuse_req* fuse_get_req_nofail_nopages(struct fuse_conn* fc,
 	wait_event(fc->blocked_waitq, fc->initialized);
 	/* Matches smp_wmb() in fuse_set_initialized() */
 	smp_rmb();
+	
 	req = fuse_request_alloc(0);
 	if (!req)
 		req = get_reserved_req(fc, file);
@@ -340,7 +350,7 @@ void fuse_put_request(struct fuse_conn* fc, struct fuse_req* req)
 			__clear_bit(FR_WAITING, &req->flags);
 			fuse_drop_waiting(fc);
 		}
-
+		//根据stolen_file判断是否使用的是 reserved_req
 		if (req->stolen_file)
 			put_reserved_req(fc, req);
 		else
@@ -361,7 +371,8 @@ static unsigned len_args(unsigned numargs, struct fuse_arg* args)
 }
 
 static u64 fuse_get_unique(struct fuse_iqueue* fiq)
-{
+{	
+	/** The next unique request id */
 	fiq->reqctr += FUSE_REQ_ID_STEP;
 	return fiq->reqctr;
 }
@@ -379,6 +390,10 @@ static void queue_request(struct fuse_iqueue* fiq, struct fuse_req* req)
 	wake_up_locked(&fiq->waitq);
 	kill_fasync(&fiq->fasync, SIGIO, POLL_IN);
 }
+
+// 在 FUSE 文件系统中，当一个文件或目录的访问计数器归零时，FUSE 
+// 内核会向文件系统发送一个 "forget" 请求，通知文件系统该文件或目录将要被删除。
+// FUSE 文件系统需要处理这些请求，以便正确地释放相关的资源
 
 void fuse_queue_forget(struct fuse_conn* fc, struct fuse_forget_link* forget,
 	u64 nodeid, u64 nlookup)
@@ -654,7 +669,9 @@ bool fuse_request_queue_background(struct fuse_conn* fc, struct fuse_req* req)
 			set_bdi_congested(fc->sb->s_bdi, BLK_RW_SYNC);
 			set_bdi_congested(fc->sb->s_bdi, BLK_RW_ASYNC);
 		}
+		//将 req->list 挂到 bg_queue
 		list_add_tail(&req->list, &fc->bg_queue);
+		//flush bg_queue，将 req 挂到 fiq->pending 里面去
 		flush_bg_queue(fc);
 		queued = true;
 	}
@@ -1322,7 +1339,7 @@ restart:
 		err = (fc->aborted && fc->abort_err) ? -ECONNABORTED : -ENODEV;
 		goto err_unlock;
 	}
-
+	//如果interrupt链表不空，先读取/处理interrupt中的请求
 	if (!list_empty(&fiq->interrupts)) {
 		req = list_entry(fiq->interrupts.next, struct fuse_req,
 			intr_entry);
@@ -1358,11 +1375,13 @@ restart:
 	list_add(&req->list, &fpq->io);
 	spin_unlock(&fpq->lock);
 	cs->req = req;
+	//开始拷贝header和参数
 	err = fuse_copy_one(cs, &in->h, sizeof(in->h));
 	if (!err)
 		err = fuse_copy_args(cs, in->numargs, in->argpages,
 			(struct fuse_arg*)in->args, 0);
 	fuse_copy_finish(cs);
+
 	spin_lock(&fpq->lock);
 	clear_bit(FR_LOCKED, &req->flags);
 	if (!fpq->connected) {
@@ -1378,6 +1397,7 @@ restart:
 		goto out_end;
 	}
 	hash = fuse_req_hash(req->in.h.unique);
+	//移动到 processing 链表
 	list_move_tail(&req->list, &fpq->processing[hash]);
 	__fuse_get_request(req);
 	set_bit(FR_SENT, &req->flags);
@@ -1862,6 +1882,7 @@ static int fuse_notify(struct fuse_conn* fc, enum fuse_notify_code code,
 }
 
 /* Look up request on processing list by unique ID */
+//在process链表中寻找req返回
 static struct fuse_req* request_find(struct fuse_pqueue* fpq, u64 unique)
 {
 	unsigned int hash = fuse_req_hash(unique);
@@ -1915,7 +1936,7 @@ static ssize_t fuse_dev_do_write(struct fuse_dev* fud,
 
 	if (nbytes < sizeof(struct fuse_out_header))
 		return -EINVAL;
-
+	//
 	err = fuse_copy_one(cs, &oh, sizeof(oh));
 	if (err)
 		goto err_finish;

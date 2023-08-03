@@ -2073,18 +2073,22 @@ find_page:
 			goto out;
 		}
 
-		page = find_get_page(mapping, index);
-		if (!page) {
+		page = find_get_page(mapping, index);  // 访问特定index的page
+		if (!page) {  // 如果是NULL，即在page cache找不到
 			if (iocb->ki_flags & IOCB_NOWAIT)
 				goto would_block;
+			//进行同步预读
 			page_cache_sync_readahead(mapping,
 					ra, filp,
 					index, last_index - index);
+			//再次获取
 			page = find_get_page(mapping, index);
 			if (unlikely(page == NULL))
 				goto no_cached_page;
 		}
+		//如果读取出来的标志含有Readahead的特殊标志
 		if (PageReadahead(page)) {
+			//进行一次异步预读
 			page_cache_async_readahead(mapping,
 					ra, filp, page,
 					index, last_index - index);

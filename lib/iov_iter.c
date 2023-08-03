@@ -432,11 +432,13 @@ int iov_iter_fault_in_readable(struct iov_iter *i, size_t bytes)
 }
 EXPORT_SYMBOL(iov_iter_fault_in_readable);
 
+//iov_iter_init(&iter, READ, &iov, 1, len);
 void iov_iter_init(struct iov_iter *i, unsigned int direction,
 			const struct iovec *iov, unsigned long nr_segs,
 			size_t count)
 {
 	WARN_ON(direction & ~(READ | WRITE));
+	//确定到底是读还是写
 	direction &= READ | WRITE;
 
 	/* It will get better.  Eventually... */
@@ -447,8 +449,8 @@ void iov_iter_init(struct iov_iter *i, unsigned int direction,
 		i->type = ITER_IOVEC | direction;
 		i->iov = iov;
 	}
-	i->nr_segs = nr_segs;
-	i->iov_offset = 0;
+	i->nr_segs = nr_segs;  //几个iovec
+	i->iov_offset = 0;  //从第0个iovec开始操作
 	i->count = count;
 }
 EXPORT_SYMBOL(iov_iter_init);
@@ -1527,6 +1529,7 @@ size_t hash_and_copy_to_iter(const void *addr, size_t bytes, void *hashp,
 }
 EXPORT_SYMBOL(hash_and_copy_to_iter);
 
+//计算所有的 iovec 中 iov_len 加起来有多少个 page
 int iov_iter_npages(const struct iov_iter *i, int maxpages)
 {
 	size_t size = i->count;
