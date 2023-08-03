@@ -75,6 +75,7 @@ int array_map_alloc_check(union bpf_attr *attr)
 	return 0;
 }
 
+//数组映射的 map_alloc 函数
 static struct bpf_map *array_map_alloc(union bpf_attr *attr)
 {
 	bool percpu = attr->map_type == BPF_MAP_TYPE_PERCPU_ARRAY;
@@ -84,8 +85,9 @@ static struct bpf_map *array_map_alloc(union bpf_attr *attr)
 	u64 cost, array_size, mask64;
 	struct bpf_array *array;
 
+	//获取value大小，8字节向上取整
 	elem_size = round_up(attr->value_size, 8);
-
+	//entry数量
 	max_entries = attr->max_entries;
 
 	/* On 32 bit archs roundup_pow_of_two() with max_entries that has
@@ -107,6 +109,7 @@ static struct bpf_map *array_map_alloc(union bpf_attr *attr)
 			return ERR_PTR(-E2BIG);
 	}
 
+	//array_size 大小 = struct bpf_array + entry * 数量
 	array_size = sizeof(*array);
 	if (percpu)
 		array_size += (u64) max_entries * sizeof(void *);
@@ -122,6 +125,7 @@ static struct bpf_map *array_map_alloc(union bpf_attr *attr)
 		if (cost >= U32_MAX - PAGE_SIZE)
 			return ERR_PTR(-ENOMEM);
 	}
+	//计算 arrary 向上取整后需要多少页
 	cost = round_up(cost, PAGE_SIZE) >> PAGE_SHIFT;
 
 	ret = bpf_map_precharge_memlock(cost);
@@ -129,6 +133,7 @@ static struct bpf_map *array_map_alloc(union bpf_attr *attr)
 		return ERR_PTR(ret);
 
 	/* allocate all map elements and zero-initialize them */
+	//调用 vmalloc 分配内存
 	array = bpf_map_area_alloc(array_size, numa_node);
 	if (!array)
 		return ERR_PTR(-ENOMEM);
@@ -136,7 +141,9 @@ static struct bpf_map *array_map_alloc(union bpf_attr *attr)
 	array->map.unpriv_array = unpriv;
 
 	/* copy mandatory map attributes */
+	//根据用户态传进来的属性设置 bpf_map 属性
 	bpf_map_init_from_attr(&array->map, attr);
+	//总共花费了多少页
 	array->map.pages = cost;
 	array->elem_size = elem_size;
 
@@ -270,6 +277,7 @@ static int array_map_update_elem(struct bpf_map *map, void *key, void *value,
 		memcpy(this_cpu_ptr(array->pptrs[index & array->index_mask]),
 		       value, map->value_size);
 	else
+	//直接相应下标的内存值即可
 		memcpy(array->value +
 		       array->elem_size * (index & array->index_mask),
 		       value, map->value_size);

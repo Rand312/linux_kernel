@@ -648,7 +648,7 @@ static __always_inline u32 bpf_prog_run_xdp(const struct bpf_prog *prog,
 	 */
 	return BPF_PROG_RUN(prog, xdp);
 }
-
+//bpf 程序的 指令结构体大小 * 数量
 static inline u32 bpf_prog_insn_size(const struct bpf_prog *prog)
 {
 	return prog->len * sizeof(struct bpf_insn);

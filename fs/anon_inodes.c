@@ -84,13 +84,14 @@ struct file *anon_inode_getfile(const char *name,
 	 * so ihold() is safe.
 	 */
 	ihold(anon_inode_inode);
+	//分配一个 file 结构体，与匿名 inode 相关联
 	file = alloc_file_pseudo(anon_inode_inode, anon_inode_mnt, name,
 				 flags & (O_ACCMODE | O_NONBLOCK), fops);
 	if (IS_ERR(file))
 		goto err;
 
 	file->f_mapping = anon_inode_inode->i_mapping;
-
+	//file 的私有数据 = bpf_map
 	file->private_data = priv;
 
 	return file;
@@ -118,22 +119,24 @@ EXPORT_SYMBOL_GPL(anon_inode_getfile);
  * hence saving memory and avoiding code duplication for the file/inode/dentry
  * setup.  Returns new descriptor or an error code.
  */
+//
 int anon_inode_getfd(const char *name, const struct file_operations *fops,
 		     void *priv, int flags)
 {
 	int error, fd;
 	struct file *file;
-
+	//获取一个 fd
 	error = get_unused_fd_flags(flags);
 	if (error < 0)
 		return error;
 	fd = error;
-
+	//获取一个 file
 	file = anon_inode_getfile(name, fops, priv, flags);
 	if (IS_ERR(file)) {
 		error = PTR_ERR(file);
 		goto err_put_unused_fd;
 	}
+	//将 fd 与 file 关联起来
 	fd_install(fd, file);
 
 	return fd;

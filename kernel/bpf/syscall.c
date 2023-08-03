@@ -408,7 +408,7 @@ int bpf_map_new_fd(struct bpf_map *map, int flags)
 	ret = security_bpf_map(map, OPEN_FMODE(flags));
 	if (ret < 0)
 		return ret;
-
+	//给这一块匿名内存区创建一个 fd
 	return anon_inode_getfd("bpf-map", &bpf_map_fops, map,
 				flags | O_CLOEXEC);
 }
@@ -507,10 +507,11 @@ static int map_create(union bpf_attr *attr)
 		return -EINVAL;
 
 	/* find map type and init map: hashtable vs rbtree vs bloom vs ... */
+	//分配内存，创建 bpf_map 结构体，根据 attr 初始化 bpf_map 结构体
 	map = find_and_alloc_map(attr);
 	if (IS_ERR(map))
 		return PTR_ERR(map);
-
+	
 	err = bpf_obj_name_cpy(map->name, attr->map_name);
 	if (err)
 		goto free_map_nouncharge;
@@ -544,6 +545,7 @@ static int map_create(union bpf_attr *attr)
 		map->btf_value_type_id = attr->btf_value_type_id;
 	}
 
+	//map_alloc的安全检查
 	err = security_bpf_map_alloc(map);
 	if (err)
 		goto free_map_nouncharge;
@@ -552,10 +554,11 @@ static int map_create(union bpf_attr *attr)
 	if (err)
 		goto free_map_sec;
 
+	//从 idr 系统给该 bpf_map 分配一个 id
 	err = bpf_map_alloc_id(map);
 	if (err)
 		goto free_map;
-
+	//给这映射区创建匿名fd
 	err = bpf_map_new_fd(map, f_flags);
 	if (err < 0) {
 		/* failed to allocate fd.
@@ -567,7 +570,7 @@ static int map_create(union bpf_attr *attr)
 		bpf_map_put_with_uref(map);
 		return err;
 	}
-
+	//返回此fd
 	return err;
 
 free_map:
@@ -797,8 +800,9 @@ static int map_update_elem(union bpf_attr *attr)
 
 	if (CHECK_ATTR(BPF_MAP_UPDATE_ELEM))
 		return -EINVAL;
-
+	//取出map对应的fd
 	f = fdget(ufd);
+	//取出 f->file->private_data
 	map = __bpf_map_get(f);
 	if (IS_ERR(map))
 		return PTR_ERR(map);
@@ -808,6 +812,7 @@ static int map_update_elem(union bpf_attr *attr)
 		goto err_put;
 	}
 
+	//获取key值
 	key = __bpf_copy_key(ukey, map->key_size);
 	if (IS_ERR(key)) {
 		err = PTR_ERR(key);
@@ -823,11 +828,13 @@ static int map_update_elem(union bpf_attr *attr)
 		value_size = map->value_size;
 
 	err = -ENOMEM;
+	//分配value需要的空间
 	value = kmalloc(value_size, GFP_USER | __GFP_NOWARN);
 	if (!value)
 		goto free_key;
 
 	err = -EFAULT;
+	//从userspace获取value值
 	if (copy_from_user(value, uvalue, value_size) != 0)
 		goto free_value;
 
@@ -1478,7 +1485,7 @@ static int bpf_prog_load(union bpf_attr *attr, union bpf_attr __user *uattr)
 
 	/* eBPF programs must be GPL compatible to use GPL-ed functions */
 	is_gpl = license_is_gpl_compatible(license);
-
+	//指令条数不能=0，不能超过最大值
 	if (attr->insn_cnt == 0 || attr->insn_cnt > BPF_MAXINSNS)
 		return -E2BIG;
 	if (type != BPF_PROG_TYPE_SOCKET_FILTER &&
@@ -1491,6 +1498,7 @@ static int bpf_prog_load(union bpf_attr *attr, union bpf_attr __user *uattr)
 		return -EINVAL;
 
 	/* plain bpf_prog allocation */
+	//分配 bpf_prog 结构体
 	prog = bpf_prog_alloc(bpf_prog_size(attr->insn_cnt), GFP_USER);
 	if (!prog)
 		return -ENOMEM;
@@ -1510,6 +1518,7 @@ static int bpf_prog_load(union bpf_attr *attr, union bpf_attr __user *uattr)
 	prog->len = attr->insn_cnt;
 
 	err = -EFAULT;
+	//从用户态拷贝ebpf程序，此程序应是 bpf 字节码
 	if (copy_from_user(prog->insns, u64_to_user_ptr(attr->insns),
 			   bpf_prog_insn_size(prog)) != 0)
 		goto free_prog;
@@ -1527,6 +1536,7 @@ static int bpf_prog_load(union bpf_attr *attr, union bpf_attr __user *uattr)
 	}
 
 	/* find program type: socket_filter vs tracing_filter */
+	//查找过滤模式？？？
 	err = find_prog_type(type, prog);
 	if (err < 0)
 		goto free_prog;
@@ -1537,18 +1547,22 @@ static int bpf_prog_load(union bpf_attr *attr, union bpf_attr __user *uattr)
 		goto free_prog;
 
 	/* run eBPF verifier */
+	//检查此 bpf 程序
 	err = bpf_check(&prog, attr, uattr);
 	if (err < 0)
 		goto free_used_maps;
 
+	
 	prog = bpf_prog_select_runtime(prog, &err);
 	if (err < 0)
 		goto free_used_maps;
 
+	//从idr系统分配一个 id
 	err = bpf_prog_alloc_id(prog);
 	if (err)
 		goto free_used_maps;
 
+	//给这块bpf程序缓冲区也分配一个fd，返回此 fd
 	err = bpf_prog_new_fd(prog);
 	if (err < 0) {
 		/* failed to allocate fd.
@@ -2585,11 +2599,13 @@ out:
 	return err;
 }
 
+//bpf 系统调用，就是根据不同的 cmd 调用不同分支，类似 ioctl
 SYSCALL_DEFINE3(bpf, int, cmd, union bpf_attr __user *, uattr, unsigned int, size)
 {
 	union bpf_attr attr = {};
 	int err;
 
+	//检查是否有权限使用 bpf
 	if (sysctl_unprivileged_bpf_disabled && !capable(CAP_SYS_ADMIN))
 		return -EPERM;
 
@@ -2602,11 +2618,13 @@ SYSCALL_DEFINE3(bpf, int, cmd, union bpf_attr __user *, uattr, unsigned int, siz
 	if (copy_from_user(&attr, uattr, size) != 0)
 		return -EFAULT;
 
+	//安全检查，LSM 模块的回调
 	err = security_bpf(cmd, &attr, size);
 	if (err < 0)
 		return err;
 
 	switch (cmd) {
+		//创建映射，返回值应该是匿名内存区的fd
 	case BPF_MAP_CREATE:
 		err = map_create(&attr);
 		break;
