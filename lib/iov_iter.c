@@ -450,7 +450,8 @@ void iov_iter_init(struct iov_iter *i, unsigned int direction,
 		i->iov = iov;
 	}
 	i->nr_segs = nr_segs;  //几个iovec
-	i->iov_offset = 0;  //从第0个iovec开始操作
+	//这里指的就是从哪儿开始
+	i->iov_offset = 0;  ////从第0个iovec开始操作
 	i->count = count;
 }
 EXPORT_SYMBOL(iov_iter_init);
@@ -1018,6 +1019,7 @@ static void pipe_advance(struct iov_iter *i, size_t size)
 	pipe_truncate(i);
 }
 
+//表示已经读取了 size 的数据，将 iov_iter 迭代器向后移
 void iov_iter_advance(struct iov_iter *i, size_t size)
 {
 	if (unlikely(iov_iter_is_pipe(i))) {

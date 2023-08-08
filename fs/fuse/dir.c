@@ -293,6 +293,9 @@ int fuse_valid_type(int m)
 		S_ISBLK(m) || S_ISFIFO(m) || S_ISSOCK(m);
 }
 
+// err = fuse_lookup_name(dir->i_sb, get_node_id(dir), &entry->d_name,
+// 			       &outarg, &inode);
+
 int fuse_lookup_name(struct super_block *sb, u64 nodeid, const struct qstr *name,
 		     struct fuse_entry_out *outarg, struct inode **inode)
 {

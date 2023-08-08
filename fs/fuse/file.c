@@ -141,6 +141,8 @@ int fuse_do_open(struct fuse_conn *fc, u64 nodeid, struct file *file,
 		err = fuse_send_open(fc, nodeid, file, opcode, &outarg);
 		if (!err) {
 			//设置 file handle,即设置真正的文件fd
+			//只是file hanler，表示文件句柄，任何可以由这个 file handle 可以找到具体的 file 的东西都可以叫做 file handle
+			//并不一定是 fd，在 stackfs 中，如果打开的是目录，返回的这个 fh 是自定义的一个 dirptr 结构
 			ff->fh = outarg.fh;
 			ff->open_flags = outarg.open_flags;
 
@@ -1290,12 +1292,16 @@ static int fuse_get_user_pages(struct fuse_req *req, struct iov_iter *ii,
 
 	/* Special case for kernel I/O: can copy directly into the buffer */
 	if (iov_iter_is_kvec(ii)) {
+		//获取用户态buffer地址
 		unsigned long user_addr = fuse_get_user_addr(ii);
+		//获取此次IO实际将要读写的大小值
 		size_t frag_size = fuse_get_frag_size(ii, *nbytesp);
 
 		if (write)
 			req->in.args[1].value = (void *) user_addr;
 		else
+			//将该用户态的地址记录到 out 参数里面，
+			//fuse daemon读了数据后、reply时将直接copy数据到此处
 			req->out.args[0].value = (void *) user_addr;
 
 		iov_iter_advance(ii, frag_size);

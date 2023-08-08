@@ -93,17 +93,18 @@ static int load_and_attach(const char *event, struct bpf_insn *prog, int size)
 	int fd, efd, err, id;
 	struct perf_event_attr attr = {};
 
-	attr.type = PERF_TYPE_TRACEPOINT;
-	attr.sample_type = PERF_SAMPLE_RAW;
-	attr.sample_period = 1;
-	attr.wakeup_events = 1;
+	attr.type = PERF_TYPE_TRACEPOINT; //默认为追踪点
+    attr.sample_type = PERF_SAMPLE_RAW;
+    attr.sample_period = 1; //每次触发都取样
+    attr.wakeup_events = 1; //每次取样都触发
 
+	//根据事件类型设置prog_type变量, 之后进行bpf系统调用加载程序时会用到
 	if (is_socket) {
 		prog_type = BPF_PROG_TYPE_SOCKET_FILTER;
 	} else if (is_kprobe || is_kretprobe) {
 		prog_type = BPF_PROG_TYPE_KPROBE;
-	} else if (is_tracepoint) {
-		prog_type = BPF_PROG_TYPE_TRACEPOINT;
+	} else if (is_tracepoint) {   //对本BPF程序属于这种
+		prog_type = BPF_PROG_TYPE_TRACEPOINT;  
 	} else if (is_raw_tracepoint) {
 		prog_type = BPF_PROG_TYPE_RAW_TRACEPOINT;
 	} else if (is_xdp) {
@@ -128,6 +129,7 @@ static int load_and_attach(const char *event, struct bpf_insn *prog, int size)
 	if (prog_cnt == MAX_PROGS)
 		return -1;
 
+	//进行bpf系统调用, 把BPF程序加载如内核中
 	fd = bpf_load_program(prog_type, prog, insns_cnt, license, kern_version,
 			      bpf_log_buf, BPF_LOG_BUF_SIZE);
 	if (fd < 0) {
@@ -164,7 +166,8 @@ static int load_and_attach(const char *event, struct bpf_insn *prog, int size)
 		event_fd[prog_cnt - 1] = efd;
 		return 0;
 	}
-
+	
+	//根据要观测事件, 构造debugfs路径, 获取事件的id'
 	if (is_kprobe || is_kretprobe) {
 		bool need_normal_check = true;
 		const char *event_prefix = "";
@@ -221,13 +224,13 @@ static int load_and_attach(const char *event, struct bpf_insn *prog, int size)
 		strcat(buf, event);
 		strcat(buf, "/id");
 	}
-
+	//打开debugfs中获取跟踪点对应的文件
 	efd = open(buf, O_RDONLY, 0);
 	if (efd < 0) {
 		printf("failed to open event %s\n", event);
 		return -1;
 	}
-
+	//读入文件内容, 获取字符串格式的跟踪点id
 	err = read(efd, buf, sizeof(buf));
 	if (err < 0 || err >= sizeof(buf)) {
 		printf("read from '%s' failed '%s'\n", event, strerror(errno));
@@ -235,7 +238,7 @@ static int load_and_attach(const char *event, struct bpf_insn *prog, int size)
 	}
 
 	close(efd);
-
+	//用跟踪点id设置事件属性的config
 	buf[err] = 0;
 	id = atoi(buf);
 	attr.config = id;
@@ -246,12 +249,14 @@ static int load_and_attach(const char *event, struct bpf_insn *prog, int size)
 		return -1;
 	}
 	event_fd[prog_cnt - 1] = efd;
+	//启用此观测事件
 	err = ioctl(efd, PERF_EVENT_IOC_ENABLE, 0);
 	if (err < 0) {
 		printf("ioctl PERF_EVENT_IOC_ENABLE failed err %s\n",
 		       strerror(errno));
 		return -1;
 	}
+	//把对应BPF程序attach到观测的事件上面
 	err = ioctl(efd, PERF_EVENT_IOC_SET_BPF, fd);
 	if (err < 0) {
 		printf("ioctl PERF_EVENT_IOC_SET_BPF failed err %s\n",
@@ -522,23 +527,25 @@ static int do_load_bpf_file(const char *path, fixup_map_cb fixup_map)
 
 	if (elf_version(EV_CURRENT) == EV_NONE)
 		return 1;
-
+	//打开ebpf程序文件
 	fd = open(path, O_RDONLY, 0);
 	if (fd < 0)
 		return 1;
-
+	//将elf指向该elf文件 
 	elf = elf_begin(fd, ELF_C_READ, NULL);
 
 	if (!elf)
 		return 1;
-
+	//获取elf的header
 	if (gelf_getehdr(elf, &ehdr) != &ehdr)
 		return 1;
-
 	/* clear all kprobes */
+	//	    fd = open("/sys/kernel/debug/tracing/kprobe_events", flags);
+	//      ret = write(fd, val, strlen(val));
 	i = write_kprobe_events("");
 
 	/* scan over all elf sections to get license and map info */
+	// 扫描所有的节，处理与 license、map、等相关的节
 	for (i = 1; i < ehdr.e_shnum; i++) {
 
 		if (get_sec(elf, i, &ehdr, &shname, &shdr, &data))
@@ -560,6 +567,7 @@ static int do_load_bpf_file(const char *path, fixup_map_cb fixup_map)
 				return 1;
 			}
 			memcpy(&kern_version, data->d_buf, sizeof(int));
+			// 如果是map节，记录map
 		} else if (strcmp(shname, "maps") == 0) {
 			int j;
 
@@ -588,6 +596,7 @@ static int do_load_bpf_file(const char *path, fixup_map_cb fixup_map)
 			       nr_maps, strerror(-nr_maps));
 			goto done;
 		}
+		// 加载所有的map
 		if (load_maps(map_data, nr_maps, fixup_map))
 			goto done;
 		map_data_count = nr_maps;
@@ -644,6 +653,7 @@ static int do_load_bpf_file(const char *path, fixup_map_cb fixup_map)
 		    memcmp(shname, "sockops", 7) == 0 ||
 		    memcmp(shname, "sk_skb", 6) == 0 ||
 		    memcmp(shname, "sk_msg", 6) == 0) {
+			// 加载程序，shname为要附着的事件名，d_buf为ePF指令数组，d_size为BPF程序长度
 			ret = load_and_attach(shname, data->d_buf,
 					      data->d_size);
 			if (ret != 0)
