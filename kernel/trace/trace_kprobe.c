@@ -186,6 +186,7 @@ static int kretprobe_dispatcher(struct kretprobe_instance *ri,
 /*
  * Allocate new trace_probe and initialize it (including kprobes).
  */
+// 这里注册 pre_handler 为 kprobe_dispatcher
 static struct trace_kprobe *alloc_trace_kprobe(const char *group,
 					     const char *event,
 					     void *addr,

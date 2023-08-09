@@ -401,6 +401,9 @@ static int cmp_symbols(const void *l, const void *r)
 		return 0;
 }
 
+//加载 elf 文件中的 map 节
+//maps是内核预定义的一个数组
+//maps_shndx，maps在哪一节
 static int load_elf_maps_section(struct bpf_map_data *maps, int maps_shndx,
 				 Elf *elf, Elf_Data *symbols, int strtabidx)
 {
@@ -418,8 +421,10 @@ static int load_elf_maps_section(struct bpf_map_data *maps, int maps_shndx,
 		return -EINVAL;
 
 	/* Get data for maps section via elf index */
+	// 根据 index 获取具体 map section
 	scn = elf_getscn(elf, maps_shndx);
 	if (scn)
+		// 获取 map section 的数据部分
 		data_maps = elf_getdata(scn, NULL);
 	if (!scn || !data_maps) {
 		printf("Failed to get Elf_Data from maps section %d\n",
