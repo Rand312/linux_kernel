@@ -1498,15 +1498,16 @@ static int bpf_prog_load(union bpf_attr *attr, union bpf_attr __user *uattr)
 		return -EINVAL;
 
 	/* plain bpf_prog allocation */
-	//分配 bpf_prog 结构体
+	//分配 bpf_prog 结构体，这里分配的大小为 结构体大小+程序大小
 	prog = bpf_prog_alloc(bpf_prog_size(attr->insn_cnt), GFP_USER);
 	if (!prog)
 		return -ENOMEM;
 
+	//期望附着的类型
 	prog->expected_attach_type = attr->expected_attach_type;
 
 	prog->aux->offload_requested = !!attr->prog_ifindex;
-
+	// bpf 程序加载时的安全检查
 	err = security_bpf_prog_alloc(prog->aux);
 	if (err)
 		goto free_prog_nouncharge;
@@ -1523,12 +1524,15 @@ static int bpf_prog_load(union bpf_attr *attr, union bpf_attr __user *uattr)
 			   bpf_prog_insn_size(prog)) != 0)
 		goto free_prog;
 
+	//这里设置 jit 相关属性，因为还没有 jit 编译，所以原始 orig_prog 为空
 	prog->orig_prog = NULL;
+	//还未 jit
 	prog->jited = 0;
 
 	atomic_set(&prog->aux->refcnt, 1);
 	prog->gpl_compatible = is_gpl ? 1 : 0;
 
+	//与 ebpf 程序加载到硬件设备上相关
 	if (bpf_prog_is_dev_bound(prog->aux)) {
 		err = bpf_prog_offload_init(prog, attr);
 		if (err)
@@ -1536,7 +1540,7 @@ static int bpf_prog_load(union bpf_attr *attr, union bpf_attr __user *uattr)
 	}
 
 	/* find program type: socket_filter vs tracing_filter */
-	//查找过滤模式？？？
+	//查找 bpf 程序类型，没找着出错
 	err = find_prog_type(type, prog);
 	if (err < 0)
 		goto free_prog;
@@ -1552,7 +1556,8 @@ static int bpf_prog_load(union bpf_attr *attr, union bpf_attr __user *uattr)
 	if (err < 0)
 		goto free_used_maps;
 
-	
+	// 先调用bpf_prog_select_func()为eBPF程序设置解释器运行, 
+	// 之后会调用bpf_int_jit_compile(fp)尝试通过JIT编译eBPF程序
 	prog = bpf_prog_select_runtime(prog, &err);
 	if (err < 0)
 		goto free_used_maps;

@@ -414,6 +414,7 @@ static int do_jit(struct bpf_prog *bpf_prog, int *addrs, u8 *image,
 	struct bpf_insn *insn = bpf_prog->insnsi;
 	int insn_cnt = bpf_prog->len;
 	bool seen_exit = false;
+	// 保存编译出来的指令
 	u8 temp[BPF_MAX_INSN_SIZE + BPF_INSN_SAFETY];
 	int i, cnt = 0;
 	int proglen = 0;
@@ -422,6 +423,7 @@ static int do_jit(struct bpf_prog *bpf_prog, int *addrs, u8 *image,
 	emit_prologue(&prog, bpf_prog->aux->stack_depth,
 		      bpf_prog_was_classic(bpf_prog));
 
+	//遍历eBPF指令, 每次只编译一条eBPF指令, 结果放入temp
 	for (i = 0; i < insn_cnt; i++, insn++) {
 		const s32 imm32 = insn->imm;
 		u32 dst_reg = insn->dst_reg;
@@ -1031,21 +1033,24 @@ emit_jmp:
 			pr_err("bpf_jit: unknown opcode %02x\n", insn->code);
 			return -EINVAL;
 		}
-
+		// 本次翻译出来的指令长度
 		ilen = prog - temp;
 		if (ilen > BPF_MAX_INSN_SIZE) {
 			pr_err("bpf_jit: fatal insn size error\n");
 			return -EFAULT;
 		}
-
+		// 如果非空, 则要写入JIT得到的指令
 		if (image) {
 			if (unlikely(proglen + ilen > oldproglen)) {
 				pr_err("bpf_jit: fatal error\n");
 				return -EFAULT;
 			}
+			// 将本次翻译的指令 copy 到image
 			memcpy(image + proglen, temp, ilen);
 		}
+		// 程序长度增加 ilen
 		proglen += ilen;
+		// 编译完此条指令后，程序的总长度
 		addrs[i] = proglen;
 		prog = temp;
 	}
@@ -1060,6 +1065,7 @@ struct x64_jit_data {
 	struct jit_context ctx;
 };
 
+// x86 架构下定义的强符号实现
 struct bpf_prog *bpf_int_jit_compile(struct bpf_prog *prog)
 {
 	struct bpf_binary_header *header = NULL;
@@ -1077,13 +1083,16 @@ struct bpf_prog *bpf_int_jit_compile(struct bpf_prog *prog)
 	if (!prog->jit_requested)
 		return orig_prog;
 
+	// 致盲ebpf指令中的常数
 	tmp = bpf_jit_blind_constants(prog);
 	/*
 	 * If blinding was requested and we failed during blinding,
 	 * we must fall back to the interpreter.
 	 */
+	//如果要求致盲, 但是又失败了, 那么就不能进行JIT, 直接调用解释器
 	if (IS_ERR(tmp))
 		return orig_prog;
+	//切换到致盲后的程序
 	if (tmp != prog) {
 		tmp_blinded = true;
 		prog = tmp;
@@ -1107,6 +1116,7 @@ struct bpf_prog *bpf_int_jit_compile(struct bpf_prog *prog)
 		extra_pass = true;
 		goto skip_init_addrs;
 	}
+	// addrs[i] 表示编译完第i条指令eBPF指令后，x86指令的总长度
 	addrs = kmalloc_array(prog->len, sizeof(*addrs), GFP_KERNEL);
 	if (!addrs) {
 		prog = orig_prog;
@@ -1117,6 +1127,8 @@ struct bpf_prog *bpf_int_jit_compile(struct bpf_prog *prog)
 	 * Before first pass, make a rough estimation of addrs[]
 	 * each BPF instruction is translated to less than 64 bytes
 	 */
+	//在首次pass之前, 对于addrs[]进行一个大概的估计. 
+	//每一个BPF指令翻译成x86指令后都小于64字节, 因此就都按64计算
 	for (proglen = 0, i = 0; i < prog->len; i++) {
 		proglen += 64;
 		addrs[i] = proglen;
@@ -1131,6 +1143,7 @@ skip_init_addrs:
 	 * pass to emit the final image.
 	 */
 	for (pass = 0; pass < 20 || image; pass++) {
+		// 一趟 pass
 		proglen = do_jit(prog, addrs, image, oldproglen, &ctx);
 		if (proglen <= 0) {
 out_image:
@@ -1148,6 +1161,7 @@ out_image:
 			}
 			break;
 		}
+		// 本次 pass 后程序长度一样，停止迭代
 		if (proglen == oldproglen) {
 			header = bpf_jit_binary_alloc(proglen, &image,
 						      1, jit_fill_hole);
@@ -1159,10 +1173,11 @@ out_image:
 		oldproglen = proglen;
 		cond_resched();
 	}
-
+	//在内核日志中输出JIT之后的程序
 	if (bpf_jit_enable > 1)
 		bpf_jit_dump(prog->len, proglen, pass + 1, image);
 
+	// JIT 成功之后生成一个镜像
 	if (image) {
 		if (!prog->is_func || extra_pass) {
 			bpf_jit_binary_lock_ro(header);
@@ -1173,10 +1188,13 @@ out_image:
 			jit_data->image = image;
 			jit_data->header = header;
 		}
+		//将 image 第一条指令地址作为 bpf_func
 		prog->bpf_func = (void *)image;
+		//已经 JITed
 		prog->jited = 1;
+		//JIT 后程序的长度
 		prog->jited_len = proglen;
-	} else {
+	} else { //否则，JIT失败，则解释执行源程序
 		prog = orig_prog;
 	}
 

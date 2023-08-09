@@ -343,7 +343,7 @@ union bpf_attr {
 		};
 		__u64		flags;
 	};
-
+	// 用作 BPF_PROG_LOAD
 	struct { /* anonymous struct used by BPF_PROG_LOAD command */
 		__u32		prog_type;	/* one of enum bpf_prog_type */
 		__u32		insn_cnt;
@@ -360,7 +360,7 @@ union bpf_attr {
 		 * load time to verify attach type specific parts of prog
 		 * (context accesses, allowed helpers, etc).
 		 */
-		__u32		expected_attach_type;
+		__u32		expected_attach_type;  //期望将要附着的类型
 		__u32		prog_btf_fd;	/* fd pointing to BTF type data */
 		__u32		func_info_rec_size;	/* userspace bpf_func_info size */
 		__aligned_u64	func_info;	/* func info */

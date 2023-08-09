@@ -474,8 +474,9 @@ struct sock_fprog_kern {
 };
 
 struct bpf_binary_header {
-	u32 pages;
+	u32 pages;  //包含多少页
 	/* Some arches need word alignment for their instructions */
+	//伪数组, 剩余部分保存JIT编译出的x86程序镜像, 其实就是指令了
 	u8 image[] __aligned(4);
 };
 
@@ -491,13 +492,16 @@ struct bpf_prog {
 				is_func:1,	/* program is a bpf function */
 				kprobe_override:1, /* Do we override a kprobe? */
 				has_callchain_buf:1; /* callchain buffer allocated? */
-	enum bpf_prog_type	type;		/* Type of BPF program */
-	enum bpf_attach_type	expected_attach_type; /* For some prog types */
-	u32			len;		/* Number of filter blocks */
-	u32			jited_len;	/* Size of jited insns in bytes */
+	enum bpf_prog_type	type;		/* Type of BPF program */  //bpf程序类型
+	enum bpf_attach_type	expected_attach_type; /* For some prog types */ //期望附着的类型
+	u32			len;		/* Number of filter blocks */  //bpf程序长度
+	u32			jited_len;	/* Size of jited insns in bytes */ //JIT之后程序长度
 	u8			tag[BPF_TAG_SIZE];
 	struct bpf_prog_aux	*aux;		/* Auxiliary fields */
 	struct sock_fprog_kern	*orig_prog;	/* Original BPF program */
+	// 执行 bpf 程序的函数指针，第一个参数为执行环境
+	// 对于 JIT 之后的 bpf 程序，bpf_func 就是第一条指令地址转化为 bpf_func
+	// 对于 解释器执行，bpf_func 就是解释器函数的地址，因为要解释指令，所以需要参数 insn
 	unsigned int		(*bpf_func)(const void *ctx,
 					    const struct bpf_insn *insn);
 	/* Instructions for interpreter */
@@ -660,8 +664,11 @@ static inline u32 bpf_prog_tag_scratch_size(const struct bpf_prog *prog)
 			sizeof(__be64) + 1, SHA_MESSAGE_BYTES);
 }
 
+// 计算 bpf_prog 的大小，加上了实际的 ebpf 程序
 static inline unsigned int bpf_prog_size(unsigned int proglen)
 {
+	// bpf_prog 本身大小 和
+	// 这里计算最后一条指令在 bpf_prog 程序中的 offset
 	return max(sizeof(struct bpf_prog),
 		   offsetof(struct bpf_prog, insns[proglen]));
 }

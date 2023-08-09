@@ -78,6 +78,7 @@ void *bpf_internal_load_pointer_neg_helper(const struct sk_buff *skb, int k, uns
 	return NULL;
 }
 
+// 分配一个 bpf_prog 结构体
 struct bpf_prog *bpf_prog_alloc(unsigned int size, gfp_t gfp_extra_flags)
 {
 	gfp_t gfp_flags = GFP_KERNEL | __GFP_ZERO | gfp_extra_flags;
@@ -85,6 +86,7 @@ struct bpf_prog *bpf_prog_alloc(unsigned int size, gfp_t gfp_extra_flags)
 	struct bpf_prog *fp;
 
 	size = round_up(size, PAGE_SIZE);
+	// 分配内存
 	fp = __vmalloc(size, gfp_flags, PAGE_KERNEL);
 	if (fp == NULL)
 		return NULL;
@@ -98,6 +100,7 @@ struct bpf_prog *bpf_prog_alloc(unsigned int size, gfp_t gfp_extra_flags)
 	fp->pages = size / PAGE_SIZE;
 	fp->aux = aux;
 	fp->aux->prog = fp;
+	// 设置是否需要 JIT
 	fp->jit_requested = ebpf_jit_enabled();
 
 	INIT_LIST_HEAD_RCU(&fp->aux->ksym_lnode);
@@ -341,13 +344,14 @@ static int bpf_adj_delta_to_off(struct bpf_insn *insn, u32 pos, u32 delta,
 	return 0;
 }
 
+// 调整跳转指令的偏移量
 static int bpf_adj_branches(struct bpf_prog *prog, u32 pos, u32 delta,
 			    const bool probe_pass)
 {
 	u32 i, insn_cnt = prog->len + (probe_pass ? delta : 0);
 	struct bpf_insn *insn = prog->insnsi;
 	int ret = 0;
-
+	//遍历所有指令，调整偏移量
 	for (i = 0; i < insn_cnt; i++, insn++) {
 		u8 code;
 
@@ -399,7 +403,7 @@ static void bpf_adj_linfo(struct bpf_prog *prog, u32 off, u32 delta)
 	for (; i < nr_linfo; i++)
 		linfo[i].insn_off += delta;
 }
-
+// bpf_patch_insn_single(clone, i, insn_buff, rewritten);
 struct bpf_prog *bpf_patch_insn_single(struct bpf_prog *prog, u32 off,
 				       const struct bpf_insn *patch, u32 len)
 {
@@ -412,7 +416,7 @@ struct bpf_prog *bpf_patch_insn_single(struct bpf_prog *prog, u32 off,
 		memcpy(prog->insnsi + off, patch, sizeof(*patch));
 		return prog;
 	}
-
+	//需要调整的指令数量，这里是加上了 因为致盲变化的 指令数目
 	insn_adj_cnt = prog->len + insn_delta;
 
 	/* Reject anything that would potentially let the insn->off
@@ -420,6 +424,7 @@ struct bpf_prog *bpf_patch_insn_single(struct bpf_prog *prog, u32 off,
 	 * We need to probe here before we do any reallocation where
 	 * we afterwards may not fail anymore.
 	 */
+	// 这里遍历所有的指令跳转指令的偏移量
 	if (insn_adj_cnt > cnt_max &&
 	    bpf_adj_branches(prog, off, insn_delta, true))
 		return NULL;
@@ -428,11 +433,13 @@ struct bpf_prog *bpf_patch_insn_single(struct bpf_prog *prog, u32 off,
 	 * for them. Likely, there's no need for a new allocation as
 	 * last page could have large enough tailroom.
 	 */
+	//根据程序新大小，重新分配 bpf_prog
 	prog_adj = bpf_prog_realloc(prog, bpf_prog_size(insn_adj_cnt),
 				    GFP_USER);
 	if (!prog_adj)
 		return NULL;
 
+	// 设置新大小
 	prog_adj->len = insn_adj_cnt;
 
 	/* Patching happens in 3 steps:
@@ -450,7 +457,7 @@ struct bpf_prog *bpf_patch_insn_single(struct bpf_prog *prog, u32 off,
 	memcpy(prog_adj->insnsi + off, patch, sizeof(*patch) * len);
 
 	/* We are guaranteed to not fail at this point, otherwise
-	 * the ship has sailed to reverse to the original state. An
+	 * the ship has sailed to revierse to the original state. An
 	 * overflow cannot happen at this point.
 	 */
 	BUG_ON(bpf_adj_branches(prog_adj, off, insn_delta, false));
@@ -762,11 +769,13 @@ bpf_jit_binary_alloc(unsigned int proglen, u8 **image_ptr,
 	 * fill a page, allow at least 128 extra bytes to insert a
 	 * random section of illegal instructions.
 	 */
-	size = round_up(proglen + sizeof(*hdr) + 128, PAGE_SIZE);
-	pages = size / PAGE_SIZE;
+	//大多数BPF过滤器很小, 但是如果能填充满一页,只要留128字节额外空间来插入随机的的不合法指令
+	size = round_up(proglen + sizeof(*hdr) + 128, PAGE_SIZE); //所需空间
+	pages = size / PAGE_SIZE;  //所需要页数
 
 	if (bpf_jit_charge_modmem(pages))
 		return NULL;
+	//分配可执行内存
 	hdr = bpf_jit_alloc_exec(size);
 	if (!hdr) {
 		bpf_jit_uncharge_modmem(pages);
@@ -774,11 +783,16 @@ bpf_jit_binary_alloc(unsigned int proglen, u8 **image_ptr,
 	}
 
 	/* Fill space with illegal/arch-dep instructions. */
+	// 调用填充函数, 写满不合法指令
 	bpf_fill_ill_insns(hdr, size);
 
 	hdr->pages = pages;
+	//size根据PAGE_SIZE向上对齐, 为真正分配的内存, 
+	//(proglen + sizeof(*hdr)为真正使用的内存, 
+	//两者的差就可作为随机偏移的范围
 	hole = min_t(unsigned int, size - (proglen + sizeof(*hdr)),
 		     PAGE_SIZE - sizeof(*hdr));
+	// start为hole中随机偏移的结果
 	start = (get_random_int() % hole) & ~(alignment - 1);
 
 	/* Leave a random number of instructions before BPF code. */
@@ -847,6 +861,8 @@ int bpf_jit_get_func_addr(const struct bpf_prog *prog,
 	return 0;
 }
 
+//致盲具体的指令 from
+//将新指令写入 to_buff
 static int bpf_jit_blind_insn(const struct bpf_insn *from,
 			      const struct bpf_insn *aux,
 			      struct bpf_insn *to_buff)
@@ -956,6 +972,7 @@ static int bpf_jit_blind_insn(const struct bpf_insn *from,
 		break;
 	}
 out:
+	// 返回的是致盲后的指令条数
 	return to - to_buff;
 }
 
@@ -998,9 +1015,10 @@ void bpf_jit_prog_release_other(struct bpf_prog *fp, struct bpf_prog *fp_other)
 	fp->aux->prog = fp;
 	bpf_prog_clone_free(fp_other);
 }
-
+//常数致盲，也就是将指令里面的立即数给消除掉
 struct bpf_prog *bpf_jit_blind_constants(struct bpf_prog *prog)
 {
+	//定义一个指令buf，大小为16，它是用来存放致盲后的新指令，说明最多致盲后产生的指令数量最多为16
 	struct bpf_insn insn_buff[16], aux[2];
 	struct bpf_prog *clone, *tmp;
 	int insn_delta, insn_cnt;
@@ -1009,14 +1027,14 @@ struct bpf_prog *bpf_jit_blind_constants(struct bpf_prog *prog)
 
 	if (!bpf_jit_blinding_enabled(prog) || prog->blinded)
 		return prog;
-
+	//重新拷贝一份 prog
 	clone = bpf_prog_clone_create(prog, GFP_USER);
 	if (!clone)
 		return ERR_PTR(-ENOMEM);
 
 	insn_cnt = clone->len;
 	insn = clone->insnsi;
-
+	//在 clone 上面遍历所有指令，然后致盲
 	for (i = 0; i < insn_cnt; i++, insn++) {
 		/* We temporarily need to hold the original ld64 insn
 		 * so that we can still access the first part in the
@@ -1025,11 +1043,13 @@ struct bpf_prog *bpf_jit_blind_constants(struct bpf_prog *prog)
 		if (insn[0].code == (BPF_LD | BPF_IMM | BPF_DW) &&
 		    insn[1].code == 0)
 			memcpy(aux, insn, sizeof(aux));
-
+		// 具体致盲某条指令
+		// 返回值为致盲后的指令条数
 		rewritten = bpf_jit_blind_insn(insn, aux, insn_buff);
 		if (!rewritten)
 			continue;
-
+		//根据 insn_buff 修改 clone，两步：
+		//插入 insn_buff 中的指令，调整分支指令的偏移量
 		tmp = bpf_patch_insn_single(clone, i, insn_buff, rewritten);
 		if (!tmp) {
 			/* Patching may have repointed aux->prog during
@@ -1039,7 +1059,7 @@ struct bpf_prog *bpf_jit_blind_constants(struct bpf_prog *prog)
 			bpf_jit_prog_release_other(prog, clone);
 			return ERR_PTR(-ENOMEM);
 		}
-
+		// bpf_patch_insn_single 里面使用的 realloc，所以不用 free 操作
 		clone = tmp;
 		insn_delta = rewritten - 1;
 
@@ -1710,15 +1730,18 @@ static void bpf_prog_select_func(struct bpf_prog *fp)
  * Try to JIT eBPF program, if JIT is not available, use interpreter.
  * The BPF program will be executed via BPF_PROG_RUN() macro.
  */
-//选择是运行模式，
+// 先调用bpf_prog_select_func()为eBPF程序设置解释器运行, 
+// 之后会调用bpf_int_jit_compile(fp)尝试通过JIT编译eBPF程序
 struct bpf_prog *bpf_prog_select_runtime(struct bpf_prog *fp, int *err)
 {
 	/* In case of BPF to BPF calls, verifier did all the prep
 	 * work with regards to JITing, etc.
 	 */
+	// 在BPF调用BPF的情况下，验证器已经完成了与JIT相关的所有准备工作, 直接结束
 	if (fp->bpf_func)
 		goto finalize;
-
+	// 根据栈的深度选择一个解释器作为 bpf_func，
+	// 解释器是一个函数，就将该函数的地址转换为 bpf_func 函数指针
 	bpf_prog_select_func(fp);
 
 	/* eBPF JITs can rewrite the program in case constant
@@ -1732,6 +1755,7 @@ struct bpf_prog *bpf_prog_select_runtime(struct bpf_prog *fp, int *err)
 		if (*err)
 			return fp;
 
+		// 进行 JIT 编译
 		fp = bpf_int_jit_compile(fp);
 		if (!fp->jited) {
 			bpf_prog_free_jited_linfo(fp);
@@ -1756,6 +1780,7 @@ finalize:
 	 * with JITed or non JITed program concatenations and not
 	 * all eBPF JITs might immediately support all features.
 	 */
+	// 尾调用兼容性相关检查
 	*err = bpf_check_tail_call(fp);
 
 	return fp;
@@ -2076,6 +2101,8 @@ const struct bpf_func_proto bpf_tail_call_proto = {
  * It is encouraged to implement bpf_int_jit_compile() instead, so that
  * eBPF and implicitly also cBPF can get JITed!
  */
+// 在 core.c 中只是一个弱符号，仅仅是一个占位符，
+// 链接的时候如果有同名函数，则会被替换掉，类似于重载
 struct bpf_prog * __weak bpf_int_jit_compile(struct bpf_prog *prog)
 {
 	return prog;
